@@ -2,6 +2,8 @@
 
 An tinySA Ultra companion program to scan the whole HF spectrum & save it into machine readable CSV file
 
+**WARNING: It's still WIP, code quality is eye-burning.**
+
 ### Building:
 
 ```shell
