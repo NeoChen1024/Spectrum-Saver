@@ -16,4 +16,4 @@ countline:
 	wc -l *.h *.c
 
 clean:
-	rm -f $(OBJS) $(PRGS)
+	rm -f $(OBJS) $(PRGS) *.log
