@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <ctime>
+#include <chrono>
+#include <thread>
 
 using std::string;
 using std::cout;
@@ -92,7 +94,13 @@ const string read_sweep(int fd, string filename_prefix)
 	return response;
 }
 
-
+auto now() { return std::chrono::steady_clock::now(); }
+ 
+auto awake_time() {
+    using std::chrono::operator""min;
+    auto current_time = now();
+    return std::chrono::floor<std::chrono::minutes>(current_time) + 3min;
+}
 
 int main(int argc, char *argv[])
 {
@@ -125,7 +133,7 @@ int main(int argc, char *argv[])
 	// Send init command
 	send_cmd(fd, "pause");
 	read_response(fd);
-	send_cmd(fd, "rbw 10");
+	send_cmd(fd, "rbw 30");
 	read_response(fd);
 
 	// construct the sweep command
@@ -133,8 +141,13 @@ int main(int argc, char *argv[])
 	ss << "hop " << start_freq << " " << stop_freq << " " << step_freq * 1000;
 	
 	// initiate sweep
-	send_cmd(fd, ss.str());
-	read_sweep(fd, filename_prefix);
+	while(1)
+	{
+		fprintf(stderr, "Sleeping");
+		std::this_thread::sleep_until(awake_time());
+		send_cmd(fd, ss.str());
+		read_sweep(fd, filename_prefix);
+	}
 
 	return 0;
 }
