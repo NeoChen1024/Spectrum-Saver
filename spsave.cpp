@@ -59,7 +59,6 @@ const string read_sweep(int fd, string filename_prefix)
 
 	while(read(fd, &c, 1) > 0)
 	{
-		
 		// Get the last line
 		if(c == '\n')
 		{
