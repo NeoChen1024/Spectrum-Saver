@@ -14,6 +14,7 @@
 #include <ctime>
 #include <chrono>
 #include <thread>
+#include "common.h"
 
 using std::string;
 using std::cout;
@@ -59,36 +60,18 @@ const string read_scanraw(int fd, long int start_freq, long int stop_freq, long 
 	string response;
 	uint8_t c;
 	
-	char time_str[256];
-	time_t current_time = time(NULL);
-	strftime(time_str, sizeof(time_str), "%Y%m%dT%H%M%S", gmtime(&current_time));
-
 	fstream output;
-	output.open(filename_prefix + "." + string(time_str) + ".log",
+	output.open(filename_prefix + "." + time_str() + ".log",
 		std::fstream::out | std::fstream::app);
 
-	fprintf(stderr, "[%s] Reading scanraw...", time_str);
+	fprintf(stderr, "[%s] Reading scanraw...", time_str().c_str());
 	while(read(fd, &c, 1) > 0)
 	{
-		// Get the last line
-		//response.clear();
-		
-		// printout hex dump
 		response += c;
 		// If we get a 'ch> ' prompt, we're done
 		if(response.length() >= 4 && response.substr(response.length() - 4) == "ch> ")
-		{
 			break;
-		}
 	}
-	/*
-	for(unsigned int i = 0; i < response.length(); i++)
-	{
-		fprintf(stderr, "%c (%02hhx) ", std::isprint(response[i]) ? response[i] : '?', response[i]);
-		if(i % 18 == 15)
-			fprintf(stderr, "\n");
-	}
-	*/
 
 	// count x & print out CSV
 	int x_count = 0;
