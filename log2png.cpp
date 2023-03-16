@@ -123,7 +123,6 @@ int main(int argc, char *argv[])
 
 	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
-	image.modifyImage();
 
 	// Write banner text
 	image.textAntiAlias(true);
@@ -132,6 +131,10 @@ int main(int argc, char *argv[])
 	// white text
 	image.fillColor(Color("white"));
 	image.annotate(graph_title + " " + last_log_time_str, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
+	image.modifyImage();
+
+	Pixels view(image);
+	Quantum *pixels = view.get(0, 0, width, height);
 
 	cerr << "Drawing spectrogram..." << endl;
 	// read the data from the files & draw the image
@@ -168,7 +171,13 @@ int main(int argc, char *argv[])
 			}
 			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
 			const Color color(mappedcolor.r() * MaxRGB, mappedcolor.g() * MaxRGB, mappedcolor.b() * MaxRGB, MaxRGB);
-			image.pixelColor(x, i + BANNER_HEIGHT, color);
+
+			// Raw pixel access is faster than directly using pixelColor()
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = color.quantumRed();
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = color.quantumGreen();
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = color.quantumBlue();
+			// ignore alpha channel
+			view.sync();
 		}
 
 		log_file.close();
