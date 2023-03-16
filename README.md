@@ -1,6 +1,6 @@
 # Spectrum Saver
 
-An tinySA Ultra companion program to scan the whole HF spectrum & save it into machine readable CSV file
+A set of program for logging RSSI data from tinySA & render the logs into spectrogram
 
 **WARNING: It's still WIP, code quality is eye-burning.**
 
@@ -13,5 +13,6 @@ $ make
 ### Usage:
 
 ```shell
- $ spsave [tty device] [start freq in MHz] [end freq in MHz] [freq step in kHz] [filename prefix] [loop?]
+ $ spsave <tty device> <start freq in MHz> <end freq in MHz> <freq step in kHz> <filename prefix> <loop?>
+ $ log2png <log dir> <png filename prefix> "Banner Title" 
 ```
