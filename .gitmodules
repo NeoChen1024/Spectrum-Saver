@@ -1,0 +1,3 @@
+[submodule "tinycolormap"]
+	path = tinycolormap
+	url = https://github.com/yuki-koyama/tinycolormap.git
