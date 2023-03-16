@@ -16,3 +16,7 @@ $ make
  $ spsave <tty device> <start freq in MHz> <end freq in MHz> <freq step in kHz> <RBW> <filename prefix> <loop?>
  $ log2png <log dir> <png filename prefix> "Banner Title" 
 ```
+
+### Example of rendered spectrogram:
+
+![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/sp.20230316T121059.png "Spectrogram")
