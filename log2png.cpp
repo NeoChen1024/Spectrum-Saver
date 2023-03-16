@@ -194,6 +194,8 @@ int main(int argc, char *argv[])
 		log_file.close();
 	}
 
+	image.modifyImage();
+
 	// write the image to a file
 	cerr << "Writing image to " << output_name << " (" << width << 'x' << height << ")" << endl;
 	image.write(output_name);

@@ -41,6 +41,7 @@ using std::cerr;
 using std::endl;
 using std::stringstream;
 using std::fstream;
+using std::to_string;
 
 int send_cmd(int fd, string cmd)
 {
@@ -132,9 +133,9 @@ auto awake_time() {
 
 int main(int argc, char *argv[])
 {
-	if(argc < 7)
+	if(argc < 8)
 	{
-		cout << "Usage: " << argv[0] << " <ttydev> <start freq MHz> <stop freq MHz> <step freq kHz> <filename prefix> <loop?>" << endl;
+		cout << "Usage: " << argv[0] << " <ttydev> <start freq MHz> <stop freq MHz> <step freq kHz> <RBW> <filename prefix> <loop?>" << endl;
 		return 1;
 	}
 
@@ -142,8 +143,9 @@ int main(int argc, char *argv[])
 	long int start_freq = atol(argv[2]) * 1000 * 1000;
 	long int stop_freq = atol(argv[3]) * 1000 * 1000;
 	int step_freq = atoi(argv[4]) * 1000; // kHz
-	string filename_prefix = argv[5];
-	int loop = atoi(argv[6]); // whether to run in a loop or not
+	float rbw = atof(argv[5]);
+	string filename_prefix = argv[6];
+	int loop = atoi(argv[7]); // whether to run in a loop or not
 
 	fprintf(stderr, "tty = %s, ", ttydev.c_str());
 	fprintf(stderr, "start = %ld, ", start_freq);
@@ -188,7 +190,7 @@ int main(int argc, char *argv[])
 	read_response(fd);
 	send_cmd(fd, "pause");
 	read_response(fd);
-	send_cmd(fd, "rbw 10");
+	send_cmd(fd, "rbw "+ to_string(rbw));
 	read_response(fd);
 
 	cerr << "Sweeping..." << endl << endl;

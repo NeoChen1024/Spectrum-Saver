@@ -13,6 +13,6 @@ $ make
 ### Usage:
 
 ```shell
- $ spsave <tty device> <start freq in MHz> <end freq in MHz> <freq step in kHz> <filename prefix> <loop?>
+ $ spsave <tty device> <start freq in MHz> <end freq in MHz> <freq step in kHz> <RBW> <filename prefix> <loop?>
  $ log2png <log dir> <png filename prefix> "Banner Title" 
 ```
