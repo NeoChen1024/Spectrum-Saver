@@ -23,30 +23,36 @@
 #include <Magick++.h>
 #include <vector>
 #include <algorithm>
-#include "common.h"
+#include "common.hpp"
+#include "config.hpp"
 #include "tinycolormap/include/tinycolormap.hpp"
+
+#define BANNER_HEIGHT 64
+
+using std::cout;
+using std::cerr;
+using std::endl;
+using std::string;
+using std::vector;
+using std::sort;
+using std::fstream;
+using std::filesystem::directory_iterator;
+using std::filesystem::path;
+using namespace Magick;
+using MagickCore::Quantum;
+Quantum MaxRGB = QuantumRange;
 
 int main(int argc, char *argv[])
 {
-	using std::cout;
-	using std::cerr;
-	using std::endl;
-	using std::string;
-	using std::vector;
-	using std::sort;
-	using std::fstream;
-	using std::filesystem::directory_iterator;
-	using std::filesystem::path;
-	using namespace Magick;
-	using MagickCore::Quantum;
-	Quantum MaxRGB = QuantumRange;
 
-	if(argc < 3)
+	if(argc < 4)
 	{
-		cout << "Usage: log2png <dir> <filename prefix>" << endl;
+		cout << "Usage: log2png <dir> <filename prefix> <graph title>" << endl;
+		return 1;
 	}
 	string dir = argv[1];
 	string filename_prefix = argv[2];
+	string graph_title = argv[3];
 
 	InitializeMagick(*argv);
 
@@ -94,11 +100,40 @@ int main(int argc, char *argv[])
 	size_t file_count = log_files.size(); // this will determine the height of the spectrogram
 	cout << "Found " << file_count << " files with " << line_count << " measurements each" << endl;
 
+	if(file_count > MAX_ROWS)
+	{
+		log_files.erase(log_files.begin(), log_files.begin() + file_count - MAX_ROWS);
+		cerr << "Warning: too many files, only the last " << MAX_ROWS << " files will be used" << endl;
+		file_count = MAX_ROWS;
+	}
+
+	// Get the date time from the last file name
+	string last_log_time_str = log_files.back();
+	size_t pos = last_log_time_str.find_last_of(".");
+	last_log_time_str.erase(pos, last_log_time_str.length() - pos); // remove the file extension
+	pos = last_log_time_str.find_last_of("."); // find the last dot, which separates name prefix and date time
+	last_log_time_str.erase(0, pos + 1); // remove the name prefix
+
+	string output_name = filename_prefix + "." + last_log_time_str + ".png";
+
 	// create the image
-	Image image(Geometry(line_count, file_count), Color("black"));
+
+	size_t width = line_count;
+	size_t height = file_count + BANNER_HEIGHT;
+
+	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
 	image.modifyImage();
-	
+
+	// Write banner text
+	image.textAntiAlias(true);
+	image.fontPointsize(48); // about 64px
+	image.fontFamily(FONT_FAMILY);
+	// white text
+	image.fillColor(Color("white"));
+	image.annotate(graph_title + " " + last_log_time_str, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
+
+	cerr << "Drawing spectrogram..." << endl;
 	// read the data from the files & draw the image
 	for(size_t i = 0; i < log_files.size(); i++)
 	{
@@ -131,20 +166,16 @@ int main(int argc, char *argv[])
 				cerr << "Error: power out of range: " << power_dBm << endl;
 				return 1;
 			}
-			auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
-			Color color(mappedcolor.r() * MaxRGB, mappedcolor.g() * MaxRGB, mappedcolor.b() * MaxRGB, MaxRGB);
-			image.pixelColor(x, i, color);
+			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
+			const Color color(mappedcolor.r() * MaxRGB, mappedcolor.g() * MaxRGB, mappedcolor.b() * MaxRGB, MaxRGB);
+			image.pixelColor(x, i + BANNER_HEIGHT, color);
 		}
+
+		log_file.close();
 	}
 
 	// write the image to a file
-	string last_log = log_files.back();
-	size_t pos = last_log.find_last_of(".");
-	last_log.erase(pos, last_log.length() - pos); // remove the file extension
-	pos = last_log.find_last_of("."); // find the last dot, which separates name prefix and date time
-	last_log.erase(0, pos + 1); // remove the name prefix
-
-	string output_name = filename_prefix + "." + last_log + ".png";
+	cerr << "Writing image to " << output_name << " (" << width << 'x' << height << ")" << endl;
 	image.write(output_name);
 
 	return 0;

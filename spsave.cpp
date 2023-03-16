@@ -32,7 +32,8 @@
 #include <ctime>
 #include <chrono>
 #include <thread>
-#include "common.h"
+#include "common.hpp"
+#include "config.hpp"
 
 using std::string;
 using std::cout;
@@ -108,7 +109,7 @@ const string read_scanraw(int fd, long int start_freq, long int stop_freq, long 
 			data |= response[i+2] << 8;
 			// freq in MHz, data in dBm
 			char str[256];
-			sprintf(str, "%.06f,%f\n", freq / 1e6, data / 32.0 - 174); // -128 for tinySA, -174 for tinySA Ultra
+			sprintf(str, "%.06f,%f\n", freq / 1e6, data / 32.0 - ZERO_LEVEL); // see config.hpp
 			output << str;
 		}
 		else
