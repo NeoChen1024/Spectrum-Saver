@@ -1,6 +1,6 @@
 CC	= cc
 CXX	= c++
-OPT	= -O2 -pipe -fPIC -fPIE
+OPT	= -Og -pipe -fPIC -fPIE
 FLAGS	= $(OPT) -I. -g3 -pedantic -Wall -Wextra -D_POSIX_C_SOURCE=200809L
 #DBG	= -fsanitize=undefined,integer,nullability -fno-omit-frame-pointer
 CFLAGS	= $(FLAGS) $(DBG) -std=c99
