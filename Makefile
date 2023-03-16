@@ -1,12 +1,12 @@
 CC	= cc
 CXX	= c++
 OPT	= -Og -pipe -fPIC -fPIE
-FLAGS	= $(OPT) -I. -g3 -pedantic -Wall -Wextra -D_POSIX_C_SOURCE=200809L
+IMAGEMAGICK_FLAGS = $(shell Magick++-config --cxxflags --libs)
+FLAGS	= $(OPT) -I. -g3 -pedantic -Wall -Wextra -D_POSIX_C_SOURCE=200809L $(IMAGEMAGICK_FLAGS)
 #DBG	= -fsanitize=undefined,integer,nullability -fno-omit-frame-pointer
 CFLAGS	= $(FLAGS) $(DBG) -std=c99
 CXXFLAGS = $(FLAGS) $(DBG) -std=c++20
-LDFLAGS	= -Wl,-O1 -Wl,--as-needed
-PRGS	= spsave
+PRGS	= spsave log2png
 
 .PHONY: all clean countline
 

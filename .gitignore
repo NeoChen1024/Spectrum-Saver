@@ -2,5 +2,6 @@
 *.o
 temp/
 spsave
+log2png
 *.out
 *.log
