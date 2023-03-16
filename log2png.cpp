@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <Magick++.h>
 #include <vector>
 #include <algorithm>
@@ -33,6 +34,7 @@ using std::cout;
 using std::cerr;
 using std::endl;
 using std::string;
+using std::string_view;
 using std::vector;
 using std::sort;
 using std::fstream;
@@ -163,17 +165,21 @@ int main(int argc, char *argv[])
 				continue;
 			}
 			size_t pos = line.find(",");
-			string freq = line.substr(0, pos);
-			string power = line.substr(pos + 1, line.length() - pos - 1);
-			//cout << "Freq: " << freq << " Power: " << power << endl;
+			string_view freq(line);
+			freq.remove_suffix(line.length() - pos);
+
+			string_view power(line);
+			power.remove_prefix(pos + 1);
+
 			// convert the power in dBm (-120dBm to 0dBm) to a color
 			// display range is -20 to -120 dBm (reduced dynamic range for better visibility)
-			double power_dBm = std::stod(power);
+			double power_dBm = std::stod(power.data());
 			if(power_dBm >= 0 || power_dBm < -120)
 			{
 				cerr << "Error: power out of range: " << power_dBm << endl;
 				return 1;
 			}
+
 			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
 			const Color color(mappedcolor.r() * MaxRGB, mappedcolor.g() * MaxRGB, mappedcolor.b() * MaxRGB, MaxRGB);
 
