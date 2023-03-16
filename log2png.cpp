@@ -58,6 +58,11 @@ int main(int argc, char *argv[])
 
 	// Get all CSV files in the current directory
 	vector<string> log_files;
+	if(!std::filesystem::is_directory(dir))
+	{
+		cerr << dir << " is not a directory" << endl;
+		return 1;
+	}
 	for (const auto & entry : directory_iterator(path(dir)))
 	{
 		if (entry.path().extension() == ".log")
