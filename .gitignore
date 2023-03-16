@@ -1,7 +1,9 @@
 .vscode/
 *.o
 temp/
+sp/
 spsave
 log2png
 *.out
 *.log
+*.png
