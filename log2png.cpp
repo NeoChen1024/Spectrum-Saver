@@ -190,14 +190,16 @@ int main(int argc, char *argv[])
 	cerr << "Drawing took " << (double)drawing_duration.count() / 1e6 << " seconds, at " <<
 		(double)spectrogram_pixel_count / drawing_duration.count() << "Mpix/s" << endl;
 
+	string current_time = time_str();
+
 	// Footer text
 	image.fontPointsize(24); // about 32px
-	image.annotate("Latest Sweep: " + last_log_time_str + ", Generated on " + time_str()
+	image.annotate("Latest Sweep: " + last_log_time_str + ", Generated on " + current_time
 		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 
 	// write the image to a file
-	cerr << "Writing image to " << output_name << " (" << width << 'x' << height << ")" << endl;
+	cerr << "[" << current_time <<  "] Writing image to " << output_name << " (" << width << 'x' << height << ")" << endl;
 	image.write(output_name);
 
 	return 0;
