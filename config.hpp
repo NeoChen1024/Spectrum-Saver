@@ -8,4 +8,4 @@
 /* options used by log2png */
 // Font for banner text
 #define FONT_FAMILY "Liberation Mono"
-#define MAX_ROWS 1024
+#define MAX_ROWS 1440 // would be 24 hours at 1 minute interval
