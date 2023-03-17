@@ -19,7 +19,7 @@ $ make
 
 ### Example of rendered spectrogram:
 
-![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/sp.20230316T121059.png "Spectrogram")
+![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/fmbc.png "Spectrogram")
 
 ### Spectrum Log Format:
 
