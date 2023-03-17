@@ -47,7 +47,7 @@ using std::to_string;
 int send_cmd(int fd, string cmd)
 {
 	// Send commands though fd
-	//cerr << "<< " << cmd << endl;
+	cerr << "<< " << cmd << endl;
 	cmd += "\r";
 
 	write(fd, cmd.c_str(), cmd.length());
@@ -75,15 +75,12 @@ const string read_response(int fd)
 	return response;
 }
 
-const string read_scanraw(int fd, double start_freq, double stop_freq, long int steps, string filename_prefix)
+const string read_scanraw(int fd, double start_freq, double stop_freq, long int steps, float rbw, const string &start_time, fstream &output)
 {
 	string response;
 	uint8_t c;
+	char str[PATH_MAX];
 	
-	fstream output;
-	output.open(filename_prefix + "." + time_str() + ".log",
-		std::fstream::out | std::fstream::app);
-
 	fprintf(stderr, "[%s] Reading scanraw...", time_str().c_str());
 	while(read(fd, &c, 1) > 0)
 	{
@@ -95,8 +92,10 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 
 	// count x & print out CSV
 	int x_count = 0;
-	// make CSV header
-	output << "# freq(MHz),RSSI(dBm)" << endl;
+	// make data header
+	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq, stop_freq, steps, rbw, start_time.c_str(), time_str().c_str());
+	output << str;
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)
 	{
@@ -104,13 +103,11 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 		{
 			uint16_t data;
 			// x_count starts from 0
-			double freq = start_freq + (stop_freq - start_freq) / (steps - 1) * x_count;
 			x_count++;
 			data = response[i+1] & 0xff; // avoid sign extension
 			data |= response[i+2] << 8;
 			// freq in MHz, data in dBm
-			char str[256];
-			sprintf(str, "%.06f,%f\n", freq / 1e6, data / 32.0 - ZERO_LEVEL); // see config.hpp
+			sprintf(str, "%.01f\n", data / 32.0 - ZERO_LEVEL); // see config.hpp
 			output << str;
 		}
 		else
@@ -118,23 +115,29 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 			break;
 		}
 	}
-	output.close();
+	output << endl; // one empty line between each scan
 	fprintf(stderr, "  DONE!\n");
 	return response;
 }
 
-auto now() { return std::chrono::system_clock::now(); }
- 
-auto awake_time() {
-    using std::chrono::operator""min;
-    auto current_time = now();
-    return std::chrono::ceil<std::chrono::minutes>(current_time);
+auto awake_time(int interval)
+{
+	auto now = std::chrono::system_clock::now();
+	std::chrono::time_point<std::chrono::system_clock> next;
+	fprintf(stderr, "Sleeping  ");
+	if(interval == 60)
+		next = std::chrono::ceil<std::chrono::minutes>(now);
+	else if(interval == 1)
+		next = std::chrono::ceil<std::chrono::seconds>(now);
+	else
+		test_error(1, "Invalid interval");
+	
+	return next;
 }
 
 void help_msg(char *argv[])
 {
-	//cout << "Usage: " << argv[0] << " <ttydev> <start freq MHz> <stop freq MHz> <step freq kHz> <RBW> <filename prefix> <loop?>" << endl;
-	cout << "Usage: " << argv[0] << "-t <ttydev> -s <start freq MHz> -e <stop freq MHz> -k <step freq kHz> -r <RBW> -p <filename prefix> -l <loop?>" << endl;
+	cout << "Usage: " << argv[0] << "-t <ttydev> -s <start freq MHz> -e <stop freq MHz> -k <step freq kHz> -r <RBW> -p <filename prefix> -l <loop?> -i <interval>" << endl;
 }
 
 int main(int argc, char *argv[])
@@ -147,10 +150,11 @@ int main(int argc, char *argv[])
 	float rbw = 10;	// RBW in kHz
 	string filename_prefix = "sp";
 	int loop = 0; // whether to run in a loop or not
+	int interval = 60; // interval in seconds
 
 	// Parse arguments
 	int opt;
-	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:")) != -1)
+	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:i:h")) != -1)
 	{
 		switch(opt)
 		{
@@ -175,6 +179,10 @@ int main(int argc, char *argv[])
 			case 'l':
 				loop = atoi(optarg);
 				break;
+			case 'i':
+				interval = atoi(optarg);
+				break;
+			case 'h':
 			default:
 				help_msg(argv);
 				return 1;
@@ -235,24 +243,29 @@ int main(int argc, char *argv[])
 	// construct the sweep command
 	stringstream ss;
 	long int steps = (stop_freq - start_freq) / step_freq + 1;
-	ss << "scanraw " << start_freq << " " << stop_freq << " " << steps;
+	ss << "scanraw " << (long int)start_freq << " " << (long int)stop_freq << " " << steps;
 	
+	fstream output;
+	string start_time = time_str();
+	output.open(filename_prefix + '.' + start_time + ".log", std::ios::out);
+
 	// initiate sweep
 	if(loop)
 	{
 		while(1)
 		{
-			fprintf(stderr, "Sleeping  ");
-			std::this_thread::sleep_until(awake_time());
+			std::this_thread::sleep_until(awake_time(interval));
+			start_time = time_str();
 			send_cmd(fd, ss.str());
-			read_scanraw(fd, start_freq, stop_freq, steps, filename_prefix);
+			read_scanraw(fd, start_freq, stop_freq, steps, rbw, start_time, output);
 		}
 	}
 	else
 	{
 		send_cmd(fd, ss.str());
-		read_scanraw(fd, start_freq, stop_freq, steps, filename_prefix);
+		read_scanraw(fd, start_freq, stop_freq, steps, rbw, start_time, output);
 	}
+	output.close();
 
 	return 0;
 }
