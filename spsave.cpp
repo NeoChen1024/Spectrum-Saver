@@ -39,6 +39,7 @@ using std::string;
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::atof;
 using std::stringstream;
 using std::fstream;
 using std::to_string;
@@ -74,7 +75,7 @@ const string read_response(int fd)
 	return response;
 }
 
-const string read_scanraw(int fd, long int start_freq, long int stop_freq, long int steps, string filename_prefix)
+const string read_scanraw(int fd, double start_freq, double stop_freq, long int steps, string filename_prefix)
 {
 	// Skip one line
 	string response;
@@ -131,27 +132,65 @@ auto awake_time() {
     return std::chrono::floor<std::chrono::minutes>(current_time) + 1min;
 }
 
+void help_msg(char *argv[])
+{
+	//cout << "Usage: " << argv[0] << " <ttydev> <start freq MHz> <stop freq MHz> <step freq kHz> <RBW> <filename prefix> <loop?>" << endl;
+	cout << "Usage: " << argv[0] << "-t <ttydev> -s <start freq MHz> -e <stop freq MHz> -k <step freq kHz> -r <RBW> -p <filename prefix> -l <loop?>" << endl;
+}
+
 int main(int argc, char *argv[])
 {
-	if(argc < 8)
+
+	string ttydev = "";
+	double start_freq = 1 * 1e6;	// argument in MHz, but use Hz internally
+	double stop_freq = 30 * 1e6;	// same as above
+	float step_freq = 10 * 1e3;	// argument in kHz, but use Hz internally
+	float rbw = 10;	// RBW in kHz
+	string filename_prefix = "sp";
+	int loop = 0; // whether to run in a loop or not
+
+	// Parse arguments
+	int opt;
+	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:")) != -1)
 	{
-		cout << "Usage: " << argv[0] << " <ttydev> <start freq MHz> <stop freq MHz> <step freq kHz> <RBW> <filename prefix> <loop?>" << endl;
-		return 1;
+		switch(opt)
+		{
+			case 't':
+				ttydev = optarg;
+				break;
+			case 's':
+				start_freq = atof(optarg) * 1e6;
+				break;
+			case 'e':
+				stop_freq = atof(optarg) * 1e6;
+				break;
+			case 'k':
+				step_freq = atof(optarg) * 1e3;
+				break;
+			case 'r':
+				rbw = atof(optarg);
+				break;
+			case 'p':
+				filename_prefix = optarg;
+				break;
+			case 'l':
+				loop = atoi(optarg);
+				break;
+			default:
+				help_msg(argv);
+				return 1;
+		}
 	}
 
-	string ttydev = argv[1];
-	long int start_freq = atol(argv[2]) * 1000 * 1000;
-	long int stop_freq = atol(argv[3]) * 1000 * 1000;
-	int step_freq = atoi(argv[4]) * 1000; // kHz
-	float rbw = atof(argv[5]);
-	string filename_prefix = argv[6];
-	int loop = atoi(argv[7]); // whether to run in a loop or not
-
 	fprintf(stderr, "tty = %s, ", ttydev.c_str());
-	fprintf(stderr, "start = %ld, ", start_freq);
-	fprintf(stderr, "stop = %ld, ", stop_freq);
-	fprintf(stderr, "step = %d, ", step_freq);
-	fprintf(stderr, "filename prefix = %s\n", filename_prefix.c_str());
+	fprintf(stderr, "start = %3.06fMHz,\t", start_freq / 1e6);
+	fprintf(stderr, "stop = %3.06fMHz,\t", stop_freq / 1e6);
+	fprintf(stderr, "step = %.03fkHz,\t", step_freq / 1e3);
+	fprintf(stderr, "rbw = %.03fkHz,\t", rbw);
+	fprintf(stderr, "filename prefix = \"%s\"\n", filename_prefix.c_str());
+
+	// Sanity check
+	test_error(start_freq > stop_freq, "start freq > stop freq");
 
 	// Open the serial port
 	int fd = open(ttydev.c_str(), O_RDWR | O_NOCTTY);
