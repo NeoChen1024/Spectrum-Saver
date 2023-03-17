@@ -118,8 +118,12 @@ int main(int argc, char *argv[])
 			{
 				getline(log_file, line);
 				// check if it's valid floating point number
-				if(i == steps && line.empty())
+				if(i == steps)
+				{
+					test_error(line != "", "Error: at record #" + to_string(record_count) + ", last line of record is not empty");
 					continue; // last line is empty, skip it
+				}
+
 				try
 				{
 					power_data.emplace_back(std::stof(line));
