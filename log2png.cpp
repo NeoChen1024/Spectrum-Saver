@@ -28,7 +28,8 @@
 #include "config.hpp"
 #include "tinycolormap/include/tinycolormap.hpp"
 
-#define BANNER_HEIGHT 64
+#define BANNER_HEIGHT 64 // 48pt
+#define FOOTER_HEIGHT 32 // 24pt
 
 using std::cout;
 using std::cerr;
@@ -60,11 +61,7 @@ int main(int argc, char *argv[])
 
 	// Get all CSV files in the current directory
 	vector<string> log_files;
-	if(!std::filesystem::is_directory(dir))
-	{
-		cerr << dir << " is not a directory" << endl;
-		return 1;
-	}
+	test_error(!std::filesystem::is_directory(dir), "Invalid directory: " + dir);
 	for (const auto & entry : directory_iterator(path(dir)))
 	{
 		if (entry.path().extension() == ".log")
@@ -94,11 +91,7 @@ int main(int argc, char *argv[])
 	size_t line_count = line_counts[0]; // will be used later
 	for(auto & count : line_counts)
 	{
-		if(count != line_count)
-		{
-			cerr << "Error: line counts are not equal" << endl;
-			return 1;
-		}
+		test_error(count != line_count, "Line count mismatch: " + std::to_string(count) + " != " + std::to_string(line_count));
 	}
 	line_counts.clear(); // free memory
 
@@ -126,18 +119,18 @@ int main(int argc, char *argv[])
 	// create the image
 
 	size_t width = line_count;
-	size_t height = file_count + BANNER_HEIGHT;
+	size_t height = file_count + BANNER_HEIGHT + FOOTER_HEIGHT;
 
 	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
 
-	// Write banner text
+	// Set font style & color
 	image.textAntiAlias(true);
-	image.fontPointsize(48); // about 64px
 	image.fontFamily(FONT_FAMILY);
-	// white text
 	image.fillColor(Color("white"));
-	image.annotate(graph_title + " " + last_log_time_str, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
+	// Write banner text
+	image.fontPointsize(48); // about 64px
+	image.annotate(graph_title, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
 	image.modifyImage();
 
 	Pixels view(image);
@@ -193,6 +186,12 @@ int main(int argc, char *argv[])
 		log_file.close();
 	}
 
+	image.modifyImage();
+
+	// Footer text
+	image.fontPointsize(24); // about 32px
+	image.annotate("Latest Sweep: " + last_log_time_str + ", Generated on " + time_str()
+		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 
 	// write the image to a file
