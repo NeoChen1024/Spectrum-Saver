@@ -20,3 +20,21 @@ $ make
 ### Example of rendered spectrogram:
 
 ![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/sp.20230316T121059.png "Spectrogram")
+
+### TODO:
+
+New better log format:
+
+```csv
+# <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+<dBm>
+<dBm>
+<dBm>
+...
+<dBm>
+
+# <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+<dBm>
+...
+<dBm>
+```
