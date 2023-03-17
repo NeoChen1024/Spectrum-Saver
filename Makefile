@@ -1,6 +1,6 @@
 CC	= cc
 CXX	= c++
-OPT	= -Og -pipe -fPIC -fPIE
+OPT	= -O2 -pipe -fPIC -fPIE
 IMAGEMAGICK_FLAGS = $(shell Magick++-config --cxxflags --libs)
 FLAGS	= $(OPT) -I. -g3 -pedantic -Wall -Wextra -D_POSIX_C_SOURCE=200809L $(IMAGEMAGICK_FLAGS)
 #DBG	= -fsanitize=undefined,integer,nullability -fno-omit-frame-pointer
