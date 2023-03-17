@@ -181,12 +181,11 @@ int main(int argc, char *argv[])
 			}
 
 			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
-			const Color color(mappedcolor.r() * MaxRGB, mappedcolor.g() * MaxRGB, mappedcolor.b() * MaxRGB, MaxRGB);
 
 			// Raw pixel access is faster than directly using pixelColor()
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = color.quantumRed();
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = color.quantumGreen();
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = color.quantumBlue();
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = mappedcolor.r() * MaxRGB;
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = mappedcolor.g() * MaxRGB;
+			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = mappedcolor.b() * MaxRGB;
 			// ignore alpha channel
 			view.sync();
 		}
