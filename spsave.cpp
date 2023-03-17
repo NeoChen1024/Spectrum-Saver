@@ -47,7 +47,7 @@ using std::to_string;
 int send_cmd(int fd, string cmd)
 {
 	// Send commands though fd
-	cerr << "<< " << cmd << endl;
+	//cerr << "<< " << cmd << endl;
 	cmd += "\r";
 
 	write(fd, cmd.c_str(), cmd.length());
@@ -77,7 +77,6 @@ const string read_response(int fd)
 
 const string read_scanraw(int fd, double start_freq, double stop_freq, long int steps, string filename_prefix)
 {
-	// Skip one line
 	string response;
 	uint8_t c;
 	
