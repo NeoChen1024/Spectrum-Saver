@@ -14,7 +14,7 @@ static const string time_str(void)
 	return string(time_str);
 }
 
-void static test_error(bool condition, const string &message)
+void static if_error(bool condition, const string &message)
 {
 	if(condition)
 	{
