@@ -128,7 +128,7 @@ auto now() { return std::chrono::system_clock::now(); }
 auto awake_time() {
     using std::chrono::operator""min;
     auto current_time = now();
-    return std::chrono::floor<std::chrono::minutes>(current_time) + 1min;
+    return std::chrono::ceil<std::chrono::minutes>(current_time);
 }
 
 void help_msg(char *argv[])
