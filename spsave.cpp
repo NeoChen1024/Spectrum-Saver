@@ -1,5 +1,5 @@
 /*
- *   spsave: Save spectrum data from tinySA Ultra to log files
+ *   spsave: Save spectrum data from tinySA / tinySA Ultra to log files
  *   Copyright (C) 2023 Kelei Chen
  *
  *   This program is free software: you can redistribute it and/or modify
@@ -75,7 +75,9 @@ const string read_response(int fd)
 	return response;
 }
 
-const string read_scanraw(int fd, double start_freq, double stop_freq, long int steps, float rbw, const string &start_time, fstream &output)
+// TODO: the argument list is becoming too long, consider using a struct
+const string read_scanraw(
+	int fd, int zero_level, double start_freq, double stop_freq, long int steps, float rbw, const string &start_time, fstream &output)
 {
 	string response;
 	uint8_t c;
@@ -94,7 +96,7 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 	int x_count = 0;
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq / 1e6, stop_freq / 1e6, steps, rbw, start_time.c_str(), time_str().c_str());
+	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq, stop_freq, steps, rbw, start_time.c_str(), time_str().c_str());
 	output << str;
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)
@@ -107,7 +109,7 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 			data = response[i+1] & 0xff; // avoid sign extension
 			data |= response[i+2] << 8;
 			// freq in MHz, data in dBm
-			sprintf(str, "%.01f\n", data / 32.0 - ZERO_LEVEL); // see config.hpp
+			sprintf(str, "%.01f\n", data / 32.0 - zero_level); // see config.hpp
 			output << str;
 		}
 		else
@@ -120,41 +122,63 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 	return response;
 }
 
+// Credits: https://stackoverflow.com/questions/54591636/ceiling-time-point-to-runtime-defined-duration/54634050#54634050
+template <class Clock, class Duration1, class Duration2>
+constexpr auto ceil(std::chrono::time_point<Clock, Duration1> t, Duration2 m) noexcept
+{
+	using R = std::chrono::time_point<Clock, Duration2>;
+	auto r = std::chrono::time_point_cast<Duration2>(R{} + (t - R{}) / m * m);
+	if (r < t)
+		r += m;
+	return r;
+}
+
 auto awake_time(int interval)
 {
 	auto now = std::chrono::system_clock::now();
 	std::chrono::time_point<std::chrono::system_clock> next;
-	fprintf(stderr, "Sleeping  ");
-	if(interval == 60)
-		next = std::chrono::ceil<std::chrono::minutes>(now);
-	else if(interval == 1)
-		next = std::chrono::ceil<std::chrono::seconds>(now);
-	else
-		test_error(1, "Invalid interval");
 	
-	return next;
+	return ceil(now, std::chrono::seconds(interval));
 }
 
 void help_msg(char *argv[])
 {
-	cout << "Usage: " << argv[0] << "-t <ttydev> -s <start freq MHz> -e <stop freq MHz> -k <step freq kHz> -r <RBW> -p <filename prefix> -l <loop?> -i <interval>" << endl;
+	cout << "Usage: " << argv[0] << " [options]" << endl <<
+		"\t-t <ttydev>\n"
+		"\t-m <tinySA Model>	\"tinySA\" or \"tinySA4\"\n"
+		"\t-s <start freq MHz>\n"
+		"\t-e <stop freq MHz>\n"
+		"\t-k <step freq kHz>\n"
+		"\t-r <RBW in kHz>\t	consult tinySA.org for supported RBW values\n"
+		"\t-p <filename prefix>\n"
+		"\t-l <loop?>		0 is false, any other value is true\n"
+		"\t-i <interval>\t	sweep interval in seconds" << endl << endl;
+}
+
+fstream new_logfile(const string &filename_prefix, const string &start_time)
+{
+	fstream output;
+	output.open(filename_prefix + '.' + start_time + ".log", std::ios::out);
+	if_error(!output.is_open(), "Error: cannot open output file");
+	return output;
 }
 
 int main(int argc, char *argv[])
 {
 
 	string ttydev = "";
-	double start_freq = 1 * 1e6;	// argument in MHz, but use Hz internally
-	double stop_freq = 30 * 1e6;	// same as above
-	float step_freq = 10 * 1e3;	// argument in kHz, but use Hz internally
-	float rbw = 10;	// RBW in kHz
+	double start_freq_MHz = 1;	// in MHz
+	double stop_freq_MHz = 30;	// same as above
+	float step_freq_kHz = 10;	// in kHz
+	float rbw_kHz = 10;	// RBW in kHz
 	string filename_prefix = "sp";
-	int loop = 0; // whether to run in a loop or not
+	bool loop = 0; // whether to run in a loop or not
 	int interval = 60; // interval in seconds
+	string model = "tinySA4"; // tinySA or tinySA4 (Ultra)
 
 	// Parse arguments
 	int opt;
-	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:i:h")) != -1)
+	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:i:m:h")) != -1)
 	{
 		switch(opt)
 		{
@@ -162,25 +186,30 @@ int main(int argc, char *argv[])
 				ttydev = optarg;
 				break;
 			case 's':
-				start_freq = atof(optarg) * 1e6;
+				start_freq_MHz = atof(optarg);
 				break;
 			case 'e':
-				stop_freq = atof(optarg) * 1e6;
+				stop_freq_MHz = atof(optarg);
 				break;
 			case 'k':
-				step_freq = atof(optarg) * 1e3;
+				step_freq_kHz = atof(optarg);
 				break;
 			case 'r':
-				rbw = atof(optarg);
+				rbw_kHz = atof(optarg);
 				break;
 			case 'p':
 				filename_prefix = optarg;
 				break;
 			case 'l':
-				loop = atoi(optarg);
+				loop = atoi(optarg) == 0 ? false : true;
 				break;
 			case 'i':
 				interval = atoi(optarg);
+				break;
+			case 'm':
+				model = optarg;
+				if(model != "tinySA" && model != "tinySA4")
+					if_error(true, "Error: model must be either \"tinySA\" or \"tinySA4\"");
 				break;
 			case 'h':
 			default:
@@ -190,22 +219,18 @@ int main(int argc, char *argv[])
 	}
 
 	fprintf(stderr, "tty = %s, ", ttydev.c_str());
-	fprintf(stderr, "start = %3.06fMHz,\t", start_freq / 1e6);
-	fprintf(stderr, "stop = %3.06fMHz,\t", stop_freq / 1e6);
-	fprintf(stderr, "step = %.03fkHz,\t", step_freq / 1e3);
-	fprintf(stderr, "rbw = %.03fkHz,\t", rbw);
+	fprintf(stderr, "start = %3.06fMHz, ", start_freq_MHz);
+	fprintf(stderr, "stop = %3.06fMHz, ", stop_freq_MHz);
+	fprintf(stderr, "step = %.03fkHz, ", step_freq_kHz);
+	fprintf(stderr, "rbw = %.03fkHz, ", rbw_kHz);
 	fprintf(stderr, "filename prefix = \"%s\"\n", filename_prefix.c_str());
 
 	// Sanity check
-	test_error(start_freq > stop_freq, "start freq > stop freq");
+	if_error(start_freq_MHz > stop_freq_MHz, "Error: start freq > stop freq");
 
 	// Open the serial port
 	int fd = open(ttydev.c_str(), O_RDWR | O_NOCTTY);
-	if(!isatty(fd))
-	{
-		fprintf(stderr, "Error: %s is not a tty\n", ttydev.c_str());
-		return 1;
-	}
+	if_error(!isatty(fd), "Error: " + ttydev + " is not a tty");
 	// set baudrate to 115200 8N1, no flow control, no modem control, no echo & CR/LF translation
 	struct termios tty;
 	tcgetattr(fd, &tty);
@@ -236,34 +261,53 @@ int main(int argc, char *argv[])
 	read_response(fd);
 	send_cmd(fd, "pause");
 	read_response(fd);
-	send_cmd(fd, "rbw "+ to_string(rbw));
+	send_cmd(fd, "rbw "+ to_string(rbw_kHz));
 	read_response(fd);
 
 	cerr << "Sweeping..." << endl << endl;
 	// construct the sweep command
 	stringstream ss;
-	long int steps = (stop_freq - start_freq) / step_freq + 1;
-	ss << "scanraw " << (long int)start_freq << " " << (long int)stop_freq << " " << steps;
+	long int steps = (stop_freq_MHz - start_freq_MHz) / (step_freq_kHz / 1e3)  + 1;
+	ss << "scanraw " << (long int)(start_freq_MHz * 1e6) << " " << (long int)(stop_freq_MHz * 1e6) << " " << steps;
 	
 	fstream output;
 	string start_time = time_str();
-	output.open(filename_prefix + '.' + start_time + ".log", std::ios::out);
+	output = new_logfile(filename_prefix, start_time);
+
+	int zero_level = ZERO_LEVEL_ULTRA;
+	if(model == "tinySA")
+		zero_level = ZERO_LEVEL;
+	else if(model == "tinySA4")
+		zero_level = ZERO_LEVEL_ULTRA;
+
+	// number of records written to file, will rotate file when it reaches MAX_RECORDS
+	size_t record_count = 0;
 
 	// initiate sweep
 	if(loop)
 	{
 		while(1)
 		{
+			fprintf(stderr, "Sleeping  ");
 			std::this_thread::sleep_until(awake_time(interval));
 			start_time = time_str();
 			send_cmd(fd, ss.str());
-			read_scanraw(fd, start_freq, stop_freq, steps, rbw, start_time, output);
+			read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
+			record_count++;
+
+			// rotate file
+			if(record_count >= MAX_RECORDS)
+			{
+				output.close();
+				output = new_logfile(filename_prefix, start_time);
+				record_count = 0;
+			}
 		}
 	}
 	else
 	{
 		send_cmd(fd, ss.str());
-		read_scanraw(fd, start_freq, stop_freq, steps, rbw, start_time, output);
+		read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
 	}
 	output.close();
 
