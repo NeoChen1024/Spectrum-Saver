@@ -24,6 +24,7 @@
 #include <Magick++.h>
 #include <vector>
 #include <algorithm>
+#include <cassert>
 #include "common.hpp"
 #include "config.hpp"
 #include "tinycolormap/include/tinycolormap.hpp"
@@ -136,6 +137,8 @@ int main(int argc, char *argv[])
 	Pixels view(image);
 	Quantum *pixels = view.get(0, 0, width, height);
 
+	auto drawing_start_time = std::chrono::system_clock::now();
+
 	cerr << "Drawing spectrogram..." << endl;
 	// read the data from the files & draw the image
 	for(size_t i = 0; i < log_files.size(); i++)
@@ -187,6 +190,14 @@ int main(int argc, char *argv[])
 	}
 
 	image.modifyImage();
+
+	auto drawing_end_time = std::chrono::system_clock::now();
+	auto drawing_duration = std::chrono::duration_cast<std::chrono::microseconds>(drawing_end_time - drawing_start_time);
+	assert(drawing_duration.count() > 0);
+	size_t spectrogram_pixel_count = line_count * file_count;
+
+	cerr << "Drawing took " << (double)drawing_duration.count() / 1e6 << " seconds, at " <<
+		(double)spectrogram_pixel_count / drawing_duration.count() << "Mpix/s" << endl;
 
 	// Footer text
 	image.fontPointsize(24); // about 32px
