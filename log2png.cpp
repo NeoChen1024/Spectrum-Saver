@@ -1,5 +1,5 @@
 /*
- *   log2png - convert a log files to spectrogram
+ *   log2png - convert a log file to spectrogram
  *   Copyright (C) 2023 Kelei Chen
  *
  *   This program is free software: you can redistribute it and/or modify
@@ -25,6 +25,9 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdlib>
+#include <unistd.h>
 #include "common.hpp"
 #include "config.hpp"
 #include "tinycolormap/include/tinycolormap.hpp"
@@ -77,14 +80,31 @@ int main(int argc, char *argv[])
 {
 	fstream log_file;
 
-	if(argc < 4)
+	string logfile = "";
+	string filename_prefix = "sp";
+	string graph_title = "Unnamed Spectrogram";
+
+	int opt;
+
+	while((opt = getopt(argc, argv, "f:p:t:h")) != -1)
 	{
-		cout << "Usage: log2png <logfile> <filename prefix> <graph title>" << endl;
-		return 1;
+		switch(opt)
+		{
+			case 'f':
+				logfile = optarg;
+				break;
+			case 'p':
+				filename_prefix = optarg;
+				break;
+			case 't':
+				graph_title = optarg;
+				break;
+			case 'h':
+			default:
+				cerr << "Usage: " << argv[0] << " [-f <log file>] [-p <filename prefix>] [-t <graph title>]" << endl;
+				return 1;
+		}
 	}
-	string logfile = argv[1];
-	string filename_prefix = argv[2];
-	string graph_title = argv[3];
 
 	// header data
 	double start_freq = 0;
@@ -101,7 +121,7 @@ int main(int argc, char *argv[])
 
 	// open log file
 	log_file.open(logfile, std::ios::in);
-	test_error(!log_file.is_open(), "Error: could not open file " + logfile);
+	if_error(!log_file.is_open(), "Error: could not open file " + logfile);
 
 	vector<float> power_data;
 	vector<size_t> step_counts;
@@ -120,7 +140,7 @@ int main(int argc, char *argv[])
 				// check if it's valid floating point number
 				if(i == steps)
 				{
-					test_error(line != "", "Error: at record #" + to_string(record_count) + ", last line of record is not empty");
+					if_error(line != "", "Error: at record #" + to_string(record_count) + ", last line of record is not empty");
 					continue; // last line is empty, skip it
 				}
 
@@ -131,13 +151,13 @@ int main(int argc, char *argv[])
 				catch(const std::exception& e)
 				{
 					std::cerr << e.what() << '\n';
-					test_error(true, "Error: at record #" + to_string(record_count) + ", invalid data line: " + line);
+					if_error(true, "Error: at record #" + to_string(record_count) + ", invalid data line: " + line);
 				}
 			}
 		}
 		else
 		{
-			test_error(true, "Error: invalid header line: " + line);
+			if_error(true, "Error: invalid header line: " + line);
 		}
 	}
 
@@ -145,12 +165,12 @@ int main(int argc, char *argv[])
 	for(size_t i = 1; i < record_count; i++)
 	{
 		if(step_counts[i] != step_counts[i - 1])
-			test_error(true, "Error: record #" + to_string(i) + " has different number of steps than record #1");
+			if_error(true, "Error: record #" + to_string(i) + " has different number of steps than record #1");
 	}
 
 	// check if size of power_data is correct
 	if(power_data.size() != record_count * steps)
-		test_error(true, "Error: power_data count is not correct");
+		if_error(true, "Error: power_data count is not correct");
 
 	cerr << logfile << " has " << record_count << " records, " << steps << " points each" << endl;
 	
