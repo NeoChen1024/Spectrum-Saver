@@ -151,6 +151,8 @@ int main(int argc, char *argv[])
 	// check if size of power_data is correct
 	if(power_data.size() != record_count * steps)
 		test_error(true, "Error: power_data count is not correct");
+
+	cerr << logfile << " has " << record_count << " records, " << steps << " points each" << endl;
 	
 	// remove records if total number exceeds MAX_RECORDS
 	if(record_count > MAX_RECORDS)
