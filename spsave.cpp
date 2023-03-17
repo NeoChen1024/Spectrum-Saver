@@ -94,7 +94,7 @@ const string read_scanraw(int fd, double start_freq, double stop_freq, long int 
 	int x_count = 0;
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq, stop_freq, steps, rbw, start_time.c_str(), time_str().c_str());
+	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq / 1e6, stop_freq / 1e6, steps, rbw, start_time.c_str(), time_str().c_str());
 	output << str;
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)

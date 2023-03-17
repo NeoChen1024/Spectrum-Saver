@@ -1,5 +1,5 @@
 /*
- *   log2png - convert a directory of log files to a spectrogram
+ *   log2png - convert a log files to spectrogram
  *   Copyright (C) 2023 Kelei Chen
  *
  *   This program is free software: you can redistribute it and/or modify
@@ -37,6 +37,7 @@ using std::cerr;
 using std::endl;
 using std::string;
 using std::string_view;
+using std::to_string;
 using std::vector;
 using std::sort;
 using std::fstream;
@@ -46,81 +47,123 @@ using namespace Magick;
 using MagickCore::Quantum;
 Quantum MaxRGB = QuantumRange;
 
+// parse log record header line
+// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+// formatted by:
+//	"# %.06f,%.06f,%ld,%.03f,%s,%s\n"
+bool parse_header(const string &line, double &start_freq, double &stop_freq, size_t &steps, float &rbw, string &start_time, string &end_time)
+{
+	char start_time_str[32];
+	char end_time_str[32];
+	if(line[0] != '#')
+		return false;
+	
+	sscanf(line.c_str(), "# %lf,%lf,%zu,%f,%[^,],%[^,]", &start_freq, &stop_freq, &steps, &rbw, start_time_str, end_time_str);
+	start_time = start_time_str;
+	end_time = end_time_str;
+
+	// sanity check
+	if(start_freq >= stop_freq)
+		return false;
+	if(steps == 0)
+		return false;
+	if(rbw <= 0 || rbw > 1000)
+		return false;
+
+	return true;
+}
+
 int main(int argc, char *argv[])
 {
+	fstream log_file;
 
 	if(argc < 4)
 	{
-		cout << "Usage: log2png <dir> <filename prefix> <graph title>" << endl;
+		cout << "Usage: log2png <logfile> <filename prefix> <graph title>" << endl;
 		return 1;
 	}
-	string dir = argv[1];
+	string logfile = argv[1];
 	string filename_prefix = argv[2];
 	string graph_title = argv[3];
 
+	// header data
+	double start_freq = 0;
+	double stop_freq = 0;
+	size_t steps = 0;
+	float rbw = 0;
+	string start_time;
+	string end_time;
+
+	// file info
+	size_t record_count = 0;
+
 	InitializeMagick(*argv);
 
-	// Get all CSV files in the current directory
-	vector<string> log_files;
-	test_error(!std::filesystem::is_directory(dir), "Invalid directory: " + dir);
-	for (const auto & entry : directory_iterator(path(dir)))
+	// open log file
+	log_file.open(logfile, std::ios::in);
+	test_error(!log_file.is_open(), "Error: could not open file " + logfile);
+
+	vector<float> power_data;
+	vector<size_t> step_counts;
+
+	// go through all headers to get record count & validate everything
+	string line;
+	while(getline(log_file, line))
 	{
-		if (entry.path().extension() == ".log")
+		if(parse_header(line, start_freq, stop_freq, steps, rbw, start_time, end_time))
 		{
-			log_files.push_back(entry.path().filename());
+			step_counts.emplace_back(steps);
+			record_count++;
+			for(size_t i = 0; i < steps + 1; i++)
+			{
+				getline(log_file, line);
+				// check if it's valid floating point number
+				if(i == steps && line.empty())
+					continue; // last line is empty, skip it
+				try
+				{
+					power_data.emplace_back(std::stof(line));
+				}
+				catch(const std::exception& e)
+				{
+					std::cerr << e.what() << '\n';
+					test_error(true, "Error: at record #" + to_string(record_count) + ", invalid data line: " + line);
+				}
+			}
+		}
+		else
+		{
+			test_error(true, "Error: invalid header line: " + line);
 		}
 	}
 
-	// Sort the files by name
-	sort(log_files.begin(), log_files.end());
-
-	vector<size_t> line_counts;
-	// count the number of lines in the files
-	for(auto & file : log_files)
+	// check if all records have the same number of steps
+	for(size_t i = 1; i < record_count; i++)
 	{
-		std::ifstream in_file(dir + "/" + file);
-		size_t line_count = 0;
-		string line;
-		while (std::getline(in_file, line))
-		{
-			line_count++;
-		}
-		line_counts.push_back(line_count);
+		if(step_counts[i] != step_counts[i - 1])
+			test_error(true, "Error: record #" + to_string(i) + " has different number of steps than record #1");
 	}
 
-	// check if all line counts are equal
-	size_t line_count = line_counts[0]; // will be used later
-	for(auto & count : line_counts)
+	// check if size of power_data is correct
+	if(power_data.size() != record_count * steps)
+		test_error(true, "Error: power_data count is not correct");
+	
+	// remove records if total number exceeds MAX_RECORDS
+	if(record_count > MAX_RECORDS)
 	{
-		test_error(count != line_count, "Line count mismatch: " + std::to_string(count) + " != " + std::to_string(line_count));
-	}
-	line_counts.clear(); // free memory
-
-	line_count -= 1; // subtract the header line
-
-	size_t file_count = log_files.size(); // this will determine the height of the spectrogram
-	cout << "Found " << file_count << " files with " << line_count << " measurements each" << endl;
-
-	if(file_count > MAX_ROWS)
-	{
-		log_files.erase(log_files.begin(), log_files.begin() + file_count - MAX_ROWS);
-		cerr << "Warning: too many files, only the last " << MAX_ROWS << " files will be used" << endl;
-		file_count = MAX_ROWS;
+		cout << "Warning: total number of records exceeds " << MAX_RECORDS << ", removing records from the beginning" << endl;
+		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * steps);
+		record_count = MAX_RECORDS;
 	}
 
-	// Get the date time from the last file name
-	string last_log_time_str = log_files.back();
-	size_t pos = last_log_time_str.find_last_of(".");
-	last_log_time_str.erase(pos, last_log_time_str.length() - pos); // remove the file extension
-	pos = last_log_time_str.find_last_of("."); // find the last dot, which separates name prefix and date time
-	last_log_time_str.erase(0, pos + 1); // remove the name prefix
+	const string last_end_time = end_time;
 
-	string output_name = filename_prefix + "." + last_log_time_str + ".png";
+	string output_name = filename_prefix + "." + last_end_time + ".png";
 
 	// create the image
 
-	size_t width = line_count;
-	size_t height = file_count + BANNER_HEIGHT + FOOTER_HEIGHT;
+	const size_t width = steps;
+	const size_t height = record_count + BANNER_HEIGHT + FOOTER_HEIGHT;
 
 	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
@@ -140,52 +183,27 @@ int main(int argc, char *argv[])
 	auto drawing_start_time = std::chrono::system_clock::now();
 
 	cerr << "Drawing spectrogram..." << endl;
-	// read the data from the files & draw the image
-	for(size_t i = 0; i < log_files.size(); i++)
+	for(size_t i = 0; i < power_data.size(); i++)
 	{
-		// open the file
-		fstream log_file;
-		log_file.open(dir + "/" + log_files[i], std::ios::in);
-		if(!log_file.is_open())
-		{
-			cout << "Error: could not open file " << log_files[i] << endl;
-			return 1;
-		}
+		// get x & y coordinates
+		const size_t x = i % steps;
+		const size_t y = i / steps;
 
-		for(size_t x = 0; x < line_count; x++)
-		{
-			string line;
-			getline(log_file, line);
-			if(x == 0) // skip the header line
-			{
-				continue;
-			}
+		const auto mappedcolor = tinycolormap::GetColor((power_data.at(i) + 120) / 100, tinycolormap::ColormapType::Cubehelix);
 
-			// convert the power in dBm (-120dBm to 0dBm) to a color
-			// display range is -20 to -120 dBm (reduced dynamic range for better visibility)
-			double freq = 0;
-			double power_dBm = 0;
-			sscanf(line.c_str(), "%lf,%lf", &freq, &power_dBm);
-
-			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
-
-			// Raw pixel access is faster than directly using pixelColor()
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = mappedcolor.r() * MaxRGB;
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = mappedcolor.g() * MaxRGB;
-			pixels[(i + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = mappedcolor.b() * MaxRGB;
-			// ignore alpha channel
-			view.sync();
-		}
-
-		log_file.close();
+		// Raw pixel access is faster than directly using pixelColor()
+		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = mappedcolor.r() * MaxRGB;
+		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = mappedcolor.g() * MaxRGB;
+		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = mappedcolor.b() * MaxRGB;
+		// ignore alpha channel
 	}
-
+	view.sync();
 	image.modifyImage();
 
 	auto drawing_end_time = std::chrono::system_clock::now();
 	auto drawing_duration = std::chrono::duration_cast<std::chrono::microseconds>(drawing_end_time - drawing_start_time);
 	assert(drawing_duration.count() > 0);
-	size_t spectrogram_pixel_count = line_count * file_count;
+	size_t spectrogram_pixel_count = steps * record_count;
 
 	cerr << "Drawing took " << (double)drawing_duration.count() / 1e6 << " seconds, at " <<
 		(double)spectrogram_pixel_count / drawing_duration.count() << "Mpix/s" << endl;
@@ -194,7 +212,7 @@ int main(int argc, char *argv[])
 
 	// Footer text
 	image.fontPointsize(24); // about 32px
-	image.annotate("Latest Sweep: " + last_log_time_str + ", Generated on " + current_time
+	image.annotate("Latest Sweep: " + end_time + ", Generated on " + current_time
 		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 

@@ -21,9 +21,7 @@ $ make
 
 ![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/sp.20230316T121059.png "Spectrogram")
 
-### TODO:
-
-New better log format:
+### Spectrum Log Format:
 
 ```csv
 # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
