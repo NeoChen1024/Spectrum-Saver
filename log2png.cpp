@@ -160,21 +160,12 @@ int main(int argc, char *argv[])
 			{
 				continue;
 			}
-			size_t pos = line.find(",");
-			string_view freq(line);
-			freq.remove_suffix(line.length() - pos);
-
-			string_view power(line);
-			power.remove_prefix(pos + 1);
 
 			// convert the power in dBm (-120dBm to 0dBm) to a color
 			// display range is -20 to -120 dBm (reduced dynamic range for better visibility)
-			double power_dBm = std::stod(power.data());
-			if(power_dBm >= 0 || power_dBm < -120)
-			{
-				cerr << "Error: power out of range: " << power_dBm << endl;
-				return 1;
-			}
+			double freq = 0;
+			double power_dBm = 0;
+			sscanf(line.c_str(), "%lf,%lf", &freq, &power_dBm);
 
 			const auto mappedcolor = tinycolormap::GetColor((power_dBm + 120) / 100, tinycolormap::ColormapType::Cubehelix);
 
