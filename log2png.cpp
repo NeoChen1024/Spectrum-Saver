@@ -28,12 +28,10 @@
 #include <cstddef>
 #include <cstdlib>
 #include <unistd.h>
+#include <limits.h>
 #include "common.hpp"
 #include "config.hpp"
 #include "tinycolormap/include/tinycolormap.hpp"
-
-#define BANNER_HEIGHT 64 // 48pt
-#define FOOTER_HEIGHT 32 // 24pt
 
 using std::cout;
 using std::cerr;
@@ -197,9 +195,9 @@ int main(int argc, char *argv[])
 	// Set font style & color
 	image.textAntiAlias(true);
 	image.fontFamily(FONT_FAMILY);
-	image.fillColor(Color("white"));
+	image.fillColor(Color(BANNER_COLOR));
 	// Write banner text
-	image.fontPointsize(48); // about 64px
+	image.fontPointsize(PX_TO_PT(BANNER_HEIGHT));
 	image.annotate(graph_title, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
 	image.modifyImage();
 
@@ -227,18 +225,22 @@ int main(int argc, char *argv[])
 	image.modifyImage();
 
 	auto drawing_end_time = std::chrono::system_clock::now();
-	auto drawing_duration = std::chrono::duration_cast<std::chrono::microseconds>(drawing_end_time - drawing_start_time);
+	auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
 	assert(drawing_duration.count() > 0);
 	size_t spectrogram_pixel_count = steps * record_count;
 
-	cerr << "Drawing took " << (double)drawing_duration.count() / 1e6 << " seconds, at " <<
-		(double)spectrogram_pixel_count / drawing_duration.count() << "Mpix/s" << endl;
+	cerr << "Drawing took " << (double)drawing_duration.count() / 1e9 << " seconds, at " <<
+		(double)spectrogram_pixel_count / (drawing_duration.count() / 1e3) << "Mpix/s" << endl;
 
 	string current_time = time_str();
 
 	// Footer text
-	image.fontPointsize(24); // about 32px
-	image.annotate("Latest Sweep: " + end_time + ", Generated on " + current_time
+	char footer_info[PATH_MAX];
+	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
+	image.fillColor(Color(FOOTER_COLOR));
+	sprintf(footer_info, "Start: %s, Stop: %s, From %.06lfMHz to %.06lfMHz, RBW: %.01fkHz",
+		start_time.c_str(), end_time.c_str(), start_freq, stop_freq, rbw);
+	image.annotate(string(footer_info) + ", Generated on " + current_time
 		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 
