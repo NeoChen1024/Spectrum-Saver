@@ -1,9 +1,20 @@
 #include <ctime>
 #include <string>
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/format-inl.h>
+#include <fmt/chrono.h>
+#include <fmt/color.h>
+#include <fmt/ostream.h>
+#include <fmt/std.h>
+
 using std::string;
 using std::cerr;
 using std::endl;
+
+using fmt::format;
+using fmt::print;
 
 static const string time_str(void)
 {

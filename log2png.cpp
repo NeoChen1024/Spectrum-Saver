@@ -31,7 +31,7 @@
 #include <limits.h>
 #include "common.hpp"
 #include "config.hpp"
-#include "contrib/tinycolormap.hpp"
+#include <tinycolormap.hpp>
 
 using std::cout;
 using std::cerr;
@@ -76,9 +76,9 @@ bool parse_header(const string &line, double &start_freq, double &stop_freq, siz
 
 int main(int argc, char *argv[])
 {
-	fstream log_file;
+	fstream logfile_stream;
 
-	string logfile = "";
+	string logfile_name = "";
 	string filename_prefix = "sp";
 	string graph_title = "Unnamed Spectrogram";
 
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
 		switch(opt)
 		{
 			case 'f':
-				logfile = optarg;
+				logfile_name = optarg;
 				break;
 			case 'p':
 				filename_prefix = optarg;
@@ -103,6 +103,8 @@ int main(int argc, char *argv[])
 				return 1;
 		}
 	}
+
+	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
 
 	// header data
 	double start_freq = 0;
@@ -118,8 +120,8 @@ int main(int argc, char *argv[])
 	InitializeMagick(*argv);
 
 	// open log file
-	log_file.open(logfile, std::ios::in);
-	if_error(!log_file.is_open(), "Error: could not open file " + logfile);
+	logfile_stream.open(logfile_name, std::ios::in);
+	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
 
 	vector<float> power_data;
 	vector<size_t> step_counts;
@@ -127,7 +129,7 @@ int main(int argc, char *argv[])
 
 	// go through all headers to get record count & validate everything
 	string line;
-	while(getline(log_file, line))
+	while(getline(logfile_stream, line))
 	{
 		if(parse_header(line, start_freq, stop_freq, steps, rbw, start_time, end_time))
 		{
@@ -138,7 +140,7 @@ int main(int argc, char *argv[])
 			record_count++;
 			for(size_t i = 0; i < steps + 1; i++)
 			{
-				getline(log_file, line);
+				getline(logfile_stream, line);
 				// check if it's valid floating point number
 				if(i == steps)
 				{
@@ -174,12 +176,13 @@ int main(int argc, char *argv[])
 	if(power_data.size() != record_count * steps)
 		if_error(true, "Error: power_data count is not correct");
 
-	cerr << logfile << " has " << record_count << " records, " << steps << " points each" << endl;
+	print("{} has {} records, {} points each\n", logfile_name, record_count, steps);
 	
 	// remove records if total number exceeds MAX_RECORDS
 	if(record_count > MAX_RECORDS)
 	{
-		cout << "Warning: total number of records exceeds " << MAX_RECORDS << ", removing records from the beginning" << endl;
+		print("Warning: total number of records exceeds {}, removing {} records from the beginning",
+			MAX_RECORDS, record_count - MAX_RECORDS);
 		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * steps);
 		record_count = MAX_RECORDS;
 	}
@@ -210,7 +213,7 @@ int main(int argc, char *argv[])
 
 	auto drawing_start_time = std::chrono::system_clock::now();
 
-	cerr << "Drawing spectrogram..." << endl;
+	print("Drawing spectrogram... ");
 	for(size_t i = 0; i < power_data.size(); i++)
 	{
 		// get x & y coordinates
@@ -233,23 +236,26 @@ int main(int argc, char *argv[])
 	assert(drawing_duration.count() > 0);
 	size_t spectrogram_pixel_count = steps * record_count;
 
-	cerr << "Drawing took " << (double)drawing_duration.count() / 1e9 << " seconds, at " <<
-		(double)spectrogram_pixel_count / (drawing_duration.count() / 1e3) << "Mpix/s" << endl;
+	//cerr << "Drawing took " << (double)drawing_duration.count() / 1e9 << " seconds, at " <<
+	//	(double)spectrogram_pixel_count / (drawing_duration.count() / 1e3) << "Mpix/s" << endl;
+	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
+		(double)spectrogram_pixel_count / 1e6, // Mpix
+		(double)drawing_duration.count() / 1e9, // seconds
+		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
+	);
 
 	string current_time = time_str();
 
 	// Footer text
-	char footer_info[PATH_MAX];
 	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
 	image.fillColor(Color(FOOTER_COLOR));
-	sprintf(footer_info, "Start: %s, Stop: %s, From %.06lfMHz to %.06lfMHz, %zu Records, %zu Steps, RBW: %.01fkHz",
-		first_start_time.c_str(), end_time.c_str(), start_freq, stop_freq, record_count, steps, rbw);
-	image.annotate(string(footer_info) + ", Generated on " + current_time
-		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
+	const string footer_info = format("Start: {}, Stop: {}, From {:.6f}MHz to {:.6f}MHz, {} Records, {} Steps, RBW: {:.1f}kHz, Generated on {}",
+		first_start_time, end_time, start_freq, stop_freq, record_count, steps, rbw, current_time);
+	image.annotate(footer_info, Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 
 	// write the image to a file
-	cerr << "[" << current_time <<  "] Writing image to " << output_name << " (" << width << 'x' << height << ")" << endl;
+	print("[{}] Writing image to {} ({}x{})\n", current_time, output_name, width, height);
 	image.write(output_name);
 
 	return 0;

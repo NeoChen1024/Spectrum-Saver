@@ -38,6 +38,7 @@
 using std::string;
 using std::cout;
 using std::cerr;
+using std::flush;
 using std::endl;
 using std::atof;
 using std::stringstream;
@@ -71,7 +72,7 @@ const string read_response(int fd)
 	// remove the last 4 characters
 	response.erase(response.length() - 4);
 
-	cerr << ">> " << response << endl;
+	cout << ">> " << response << endl;
 	return response;
 }
 
@@ -81,9 +82,8 @@ const string read_scanraw(
 {
 	string response;
 	uint8_t c;
-	char str[PATH_MAX];
 	
-	fprintf(stderr, "[%s] Reading... ", time_str().c_str());
+	cout << format("[{}] Reading... ", time_str()) << flush;
 	while(read(fd, &c, 1) > 0)
 	{
 		response += c;
@@ -96,8 +96,7 @@ const string read_scanraw(
 	int x_count = 0;
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	sprintf(str, "# %.06f,%.06f,%ld,%.03f,%s,%s\n", start_freq, stop_freq, steps, rbw, start_time.c_str(), time_str().c_str());
-	output << str;
+	output << format("# {:.06f},{:.06f},{},{:.03f},{},{}\n", start_freq, stop_freq, steps, rbw, start_time, time_str());
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)
 	{
@@ -109,8 +108,7 @@ const string read_scanraw(
 			data = response[i+1] & 0xff; // avoid sign extension
 			data |= response[i+2] << 8;
 			// freq in MHz, data in dBm
-			sprintf(str, "%.01f\n", data / 32.0 - zero_level); // see config.hpp
-			output << str;
+			output << format("{:.1f}\n", data / 32.0 - zero_level);
 		}
 		else
 		{
@@ -118,7 +116,7 @@ const string read_scanraw(
 		}
 	}
 	output << endl; // one empty line between each scan
-	fprintf(stderr, "  done\t\t");
+	cout << format("Done. {} points read.\t", x_count) << flush; // don't do newline here
 	return response;
 }
 
@@ -145,22 +143,25 @@ void help_msg(char *argv[])
 {
 	cout << "Usage: " << argv[0] << " [options]" << endl <<
 		"\t-t <ttydev>\n"
-		"\t-m <tinySA Model>	\"tinySA\" or \"tinySA4\"\n"
-		"\t-s <start freq MHz>\n"
-		"\t-e <stop freq MHz>\n"
-		"\t-k <step freq kHz>\n"
-		"\t-r <RBW in kHz>\t	consult tinySA.org for supported RBW values\n"
-		"\t-p <filename prefix>\n"
-		"\t-l <loop?>		0 is false, any other value is true\n"
-		"\t-i <interval>\t	sweep interval in seconds" << endl << endl;
+		"\t-m <tinySA Model>	\"tinySA\" or \"tinySA4\" (default)\n"
+		"\t-s <start freq MHz>	default: 1\n"
+		"\t-e <stop freq MHz>	default: 30\n"
+		"\t-k <step freq kHz>	default: 10\n"
+		"\t-r <RBW in kHz>\t	default: 10, consult tinySA.org for supported RBW values\n"
+		"\t-p <filename prefix>	default \"sp\"\n"
+		"\t-l <loop?>		0 is false (default), any other value is true\n"
+		"\t-i <interval>\t	sweep interval in seconds (default: 60)" << endl << endl;
 }
 
-fstream new_logfile(const string &filename_prefix, const string &start_time)
+const string new_logfile(fstream &output, const string &filename_prefix, const string &start_time)
 {
-	fstream output;
-	output.open(filename_prefix + '.' + start_time + ".log", std::ios::out);
+	const string filename = {filename_prefix + '.' + start_time + ".log"};
+	if(output.is_open())
+		output.close();
+	output.open(filename, std::ios::out);
 	if_error(!output.is_open(), "Error: cannot open output file");
-	return output;
+
+	return filename;
 }
 
 int main(int argc, char *argv[])
@@ -208,8 +209,6 @@ int main(int argc, char *argv[])
 				break;
 			case 'm':
 				model = optarg;
-				if(model != "tinySA" && model != "tinySA4")
-					if_error(true, "Error: model must be either \"tinySA\" or \"tinySA4\"");
 				break;
 			case 'h':
 			default:
@@ -217,13 +216,6 @@ int main(int argc, char *argv[])
 				return 1;
 		}
 	}
-
-	fprintf(stderr, "tty = %s, ", ttydev.c_str());
-	fprintf(stderr, "start = %3.06fMHz, ", start_freq_MHz);
-	fprintf(stderr, "stop = %3.06fMHz, ", stop_freq_MHz);
-	fprintf(stderr, "step = %.03fkHz, ", step_freq_kHz);
-	fprintf(stderr, "rbw = %.03fkHz, ", rbw_kHz);
-	fprintf(stderr, "filename prefix = \"%s\"\n", filename_prefix.c_str());
 
 	// Sanity check
 	if_error(start_freq_MHz > stop_freq_MHz, "Error: start freq > stop freq");
@@ -255,7 +247,10 @@ int main(int argc, char *argv[])
 	tty.c_cc[VMIN] = 1; // no minimum number of bytes to read
 	tcsetattr(fd, TCSANOW, &tty);
 
-	cerr << "Initializing..." << endl << endl;
+	cerr << format("tty = {}, start = {:.6f}MHz, stop = {:.6f}MHz, step = {:.3f}kHz, rbw = {:.3f}kHz, filename prefix = \"{}\"\n",
+		ttydev, start_freq_MHz, stop_freq_MHz, step_freq_kHz, rbw_kHz, filename_prefix);
+
+	print("Initializing...\n\n");
 	// Send init command
 	send_cmd(fd, "");
 	read_response(fd);
@@ -264,21 +259,22 @@ int main(int argc, char *argv[])
 	send_cmd(fd, "rbw "+ to_string(rbw_kHz));
 	read_response(fd);
 
-	cerr << "Sweeping..." << endl << endl;
+	print("Sweeping...\n\n");
 	// construct the sweep command
-	stringstream ss;
 	long int steps = (stop_freq_MHz - start_freq_MHz) / (step_freq_kHz / 1e3)  + 1;
-	ss << "scanraw " << (long int)(start_freq_MHz * 1e6) << " " << (long int)(stop_freq_MHz * 1e6) << " " << steps;
+	const string scanraw_cmd = format("scanraw {:.0f} {:.0f} {}", start_freq_MHz * 1e6, stop_freq_MHz * 1e6, steps);
 	
 	fstream output;
 	string start_time = time_str();
-	output = new_logfile(filename_prefix, start_time);
+	string filename = new_logfile(output, filename_prefix, start_time);
 
 	int zero_level = ZERO_LEVEL_ULTRA;
 	if(model == "tinySA")
 		zero_level = ZERO_LEVEL;
 	else if(model == "tinySA4")
 		zero_level = ZERO_LEVEL_ULTRA;
+	else
+		if_error(true, "Error: unknown model " + model);
 
 	// number of records written to file, will rotate file when it reaches MAX_RECORDS
 	size_t record_count = 0;
@@ -288,29 +284,30 @@ int main(int argc, char *argv[])
 	{
 		while(1)
 		{
-			fprintf(stderr, "\r[\t%zu] ", record_count);
+			cout << format("\r[{:8d}] ", record_count) << flush;
 			std::this_thread::sleep_until(awake_time(interval));
 			start_time = time_str();
-			send_cmd(fd, ss.str());
+			send_cmd(fd, scanraw_cmd);
 			read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
 			record_count++;
 
 			// rotate file
 			if(record_count >= MAX_RECORDS)
 			{
-				cerr << "\nRotating file..." << endl << endl;
-				output.close();
-				output = new_logfile(filename_prefix, start_time);
 				record_count = 0;
+				// old log file will be closed in new_logfile()
+				filename = new_logfile(output, filename_prefix, start_time);
+				print("\nNew log file: {}\n\n", filename);
 			}
 		}
 	}
 	else
 	{
-		send_cmd(fd, ss.str());
+		send_cmd(fd, scanraw_cmd);
 		read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
 	}
 	output.close();
+	cout << endl;
 
 	return 0;
 }

@@ -1,6 +1,6 @@
 # Spectrum Saver
 
-A set of program for logging RSSI data from tinySA & render the logs into spectrogram
+A set of program for logging spectrum from tinySA / tinySA Ultra & render the logs into spectrogram
 
 **WARNING: It's still WIP, code quality is eye-burning.**
 
