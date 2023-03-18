@@ -4,6 +4,12 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
 
 **WARNING: It's still WIP, code quality is eye-burning.**
 
+### Cloning:
+
+```sh
+ $ git clone --recursive https://github.com/NeoChen1024/Spectrum-Saver.git
+```
+
 ### Building:
 
 ```shell
@@ -25,7 +31,7 @@ $ make
 	-i <interval>		sweep interval in seconds
 
 
- $ log2png [-f <log file>] [-p <filename prefix>] [-t <graph title>]
+ $ log2png -f <log file> [-p <filename prefix>] [-t <graph title>]
 ```
 
 ### Example of rendered spectrogram:
