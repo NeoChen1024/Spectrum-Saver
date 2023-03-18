@@ -13,8 +13,19 @@ $ make
 ### Usage:
 
 ```shell
- $ spsave <tty device> <start freq in MHz> <end freq in MHz> <freq step in kHz> <RBW> <filename prefix> <loop?>
- $ log2png <log dir> <png filename prefix> "Banner Title" 
+ $ spsave [options]
+	-t <ttydev>
+	-m <tinySA Model>	"tinySA" or "tinySA4"
+	-s <start freq MHz>
+	-e <stop freq MHz>
+	-k <step freq kHz>
+	-r <RBW in kHz>		consult tinySA.org for supported RBW values
+	-p <filename prefix>
+	-l <loop?>		0 is false, any other value is true
+	-i <interval>		sweep interval in seconds
+
+
+ $ log2png [-f <log file>] [-p <filename prefix>] [-t <graph title>]
 ```
 
 ### Example of rendered spectrogram:
