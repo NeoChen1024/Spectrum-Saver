@@ -47,3 +47,8 @@ $ make
 ...
 <dBm>
 ```
+
+### Credits:
+
+* [tinycolormap](https://github.com/yuki-koyama/tinycolormap "GitHub repo") for this awesome colormap librarylib
+* [{fmt}](https://github.com/fmtlib/fmt "GitHub repo") string formatting library
