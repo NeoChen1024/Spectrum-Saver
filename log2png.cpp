@@ -52,30 +52,30 @@ Quantum MaxRGB = QuantumRange;
 // # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 // formatted by:
 //	"# %.06f,%.06f,%ld,%.03f,%s,%s\n"
-bool parse_header(const string &line, log_header_t &header)
+bool parse_header(const string &line, log_header_t &h)
 {
 	char start_time_str[32];
 	char end_time_str[32];
 	if(line[0] != '#')
 		return false;
 	
-	sscanf(line.c_str(), "# %lf,%lf,%zu,%f,%31[^,],%31[^,]", &header.start_freq, &header.stop_freq, &header.steps, &header.rbw, start_time_str, end_time_str);
-	header.start_time = start_time_str;
-	header.end_time = end_time_str;
+	sscanf(line.c_str(), "# %lf,%lf,%zu,%f,%31[^,],%31[^,]", &h.start_freq, &h.stop_freq, &h.steps, &h.rbw, start_time_str, end_time_str);
+	h.start_time = start_time_str;
+	h.end_time = end_time_str;
 
 	// sanity check
-	if(header.start_freq >= header.stop_freq)
+	if(h.start_freq >= h.stop_freq)
 		return false;
-	if(header.steps == 0)
+	if(h.steps == 0)
 		return false;
-	if(header.rbw <= 0 || header.rbw > 1000)
+	if(h.rbw <= 0 || h.rbw > 1000)
 		return false;
 
 	return true;
 }
 
 // parse log file
-void parse_logfile(vector<float> &power_data, log_header_t &header, vector<size_t> &step_counts, size_t &record_count, fstream &logfile_stream, string &first_start_time)
+void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &step_counts, size_t &record_count, fstream &logfile_stream, string &first_start_time)
 {
 	size_t line_count = 0;
 	string line;
@@ -84,19 +84,19 @@ void parse_logfile(vector<float> &power_data, log_header_t &header, vector<size_
 		line_count++;
 		if_error(line.empty(), "Error: empty line in log file");
 
-		if(parse_header(line, header))
+		if(parse_header(line, h))
 		{
 			// save the first start time
 			if(first_start_time.empty())
-				first_start_time = header.start_time;
-			step_counts.emplace_back(header.steps);
+				first_start_time = h.start_time;
+			step_counts.emplace_back(h.steps);
 			record_count++;
-			for(size_t i = 0; i < header.steps + 1; i++)
+			for(size_t i = 0; i < h.steps + 1; i++)
 			{
 				getline(logfile_stream, line);
 				line_count++;
 				// check if it's valid floating point number
-				if(i == header.steps)
+				if(i == h.steps)
 				{
 					if_error(line != "", "Error: at record #" + to_string(record_count) + ", last line of record is not empty");
 					continue; // skip the last empty line
@@ -127,7 +127,7 @@ void parse_logfile(vector<float> &power_data, log_header_t &header, vector<size_
 	}
 
 	// check if size of power_data is correct
-	if(power_data.size() != record_count * header.steps)
+	if(power_data.size() != record_count * h.steps)
 		if_error(true, "Error: power_data count is not correct");
 
 }
@@ -182,7 +182,7 @@ int main(int argc, char *argv[])
 
 	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
 
-	log_header_t header;
+	log_header_t h;
 
 	// file info
 	size_t record_count = 0;
@@ -198,26 +198,26 @@ int main(int argc, char *argv[])
 	string first_start_time = "";
 
 	// go through all headers to get record count & validate everything
-	parse_logfile(power_data, header, step_counts, record_count, logfile_stream, first_start_time);
+	parse_logfile(power_data, h, step_counts, record_count, logfile_stream, first_start_time);
 
-	print("{} has {} records, {} points each\n", logfile_name, record_count, header.steps);
+	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
 	
 	// remove records if total number exceeds MAX_RECORDS
 	if(record_count > MAX_RECORDS)
 	{
 		print("Warning: total number of records exceeds {}, removing {} records from the beginning\n",
 			MAX_RECORDS, record_count - MAX_RECORDS);
-		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * header.steps);
+		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * h.steps);
 		record_count = MAX_RECORDS;
 	}
 
-	const string last_end_time = header.end_time;
+	const string last_end_time = h.end_time;
 
 	string output_name = filename_prefix + "." + last_end_time + ".png";
 
 	// create the image
 
-	const size_t width = header.steps;
+	const size_t width = h.steps;
 	const size_t height = record_count + BANNER_HEIGHT + FOOTER_HEIGHT;
 
 	Image image(Geometry(width, height), Color("black"));
@@ -245,7 +245,7 @@ int main(int argc, char *argv[])
 	auto drawing_end_time = std::chrono::system_clock::now();
 	auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
 	assert(drawing_duration.count() > 0);
-	size_t spectrogram_pixel_count = header.steps * record_count;
+	size_t spectrogram_pixel_count = h.steps * record_count;
 
 	//cerr << "Drawing took " << (double)drawing_duration.count() / 1e9 << " seconds, at " <<
 	//	(double)spectrogram_pixel_count / (drawing_duration.count() / 1e3) << "Mpix/s" << endl;
@@ -261,7 +261,7 @@ int main(int argc, char *argv[])
 	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
 	image.fillColor(Color(FOOTER_COLOR));
 	const string footer_info = format("Start: {}, Stop: {}, From {:.6f}MHz to {:.6f}MHz, {} Records, {} Steps, RBW: {:.1f}kHz, Generated on {}",
-		first_start_time, header.end_time, header.start_freq, header.stop_freq, record_count, header.steps, header.rbw, current_time);
+		first_start_time, h.end_time, h.start_freq, h.stop_freq, record_count, h.steps, h.rbw, current_time);
 	image.annotate(footer_info, Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
 

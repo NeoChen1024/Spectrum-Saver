@@ -78,7 +78,7 @@ const string read_response(int fd)
 
 // TODO: the argument list is becoming too long, consider using a struct
 const string read_scanraw(
-	int fd, int zero_level, log_header_t &header, fstream &output)
+	int fd, int zero_level, log_header_t &h, fstream &output)
 {
 	string response;
 	uint8_t c;
@@ -97,7 +97,7 @@ const string read_scanraw(
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 	output << format("# {:.06f},{:.06f},{},{:.03f},{},{}\n",
-		header.start_freq, header.stop_freq, header.steps, header.rbw, header.start_time, time_str());
+		h.start_freq, h.stop_freq, h.steps, h.rbw, h.start_time, time_str());
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)
 	{
@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Sanity check
-	if_error(h.start_freq > h.stop_freq, "Error: start freq > stop freq");
+	if_error(h.start_freq >= h.stop_freq, "Error: start freq > stop freq");
 	if_error(ttydev.empty(), "Error: no tty device specified");
 
 	// Open the serial port
