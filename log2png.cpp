@@ -31,7 +31,7 @@
 #include <limits.h>
 #include "common.hpp"
 #include "config.hpp"
-#include "tinycolormap/include/tinycolormap.hpp"
+#include "contrib/tinycolormap.hpp"
 
 using std::cout;
 using std::cerr;
@@ -123,6 +123,7 @@ int main(int argc, char *argv[])
 
 	vector<float> power_data;
 	vector<size_t> step_counts;
+	string first_start_time = "";
 
 	// go through all headers to get record count & validate everything
 	string line;
@@ -130,6 +131,9 @@ int main(int argc, char *argv[])
 	{
 		if(parse_header(line, start_freq, stop_freq, steps, rbw, start_time, end_time))
 		{
+			// save the first start time
+			if(first_start_time.empty())
+				first_start_time = start_time;
 			step_counts.emplace_back(steps);
 			record_count++;
 			for(size_t i = 0; i < steps + 1; i++)
@@ -238,8 +242,8 @@ int main(int argc, char *argv[])
 	char footer_info[PATH_MAX];
 	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
 	image.fillColor(Color(FOOTER_COLOR));
-	sprintf(footer_info, "Start: %s, Stop: %s, From %.06lfMHz to %.06lfMHz, RBW: %.01fkHz",
-		start_time.c_str(), end_time.c_str(), start_freq, stop_freq, rbw);
+	sprintf(footer_info, "Start: %s, Stop: %s, From %.06lfMHz to %.06lfMHz, %zu Records, %zu Steps, RBW: %.01fkHz",
+		first_start_time.c_str(), end_time.c_str(), start_freq, stop_freq, record_count, steps, rbw);
 	image.annotate(string(footer_info) + ", Generated on " + current_time
 		,Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
 	image.modifyImage();
