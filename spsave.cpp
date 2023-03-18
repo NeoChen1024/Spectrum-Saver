@@ -219,6 +219,7 @@ int main(int argc, char *argv[])
 
 	// Sanity check
 	if_error(start_freq_MHz > stop_freq_MHz, "Error: start freq > stop freq");
+	if_error(ttydev.empty(), "Error: no tty device specified");
 
 	// Open the serial port
 	int fd = open(ttydev.c_str(), O_RDWR | O_NOCTTY);
