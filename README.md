@@ -30,7 +30,7 @@ $ make
 
 ### Example of rendered spectrogram:
 
-![](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/fmbc.png "Spectrogram")
+![FM BC 87.5~108MHz Spectrogram](https://github.com/NeoChen1024/Spectrum-Saver/raw/trunk/pic/fmbc.png)
 
 ### Spectrum Log Format:
 
