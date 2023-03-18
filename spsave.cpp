@@ -78,7 +78,7 @@ const string read_response(int fd)
 
 // TODO: the argument list is becoming too long, consider using a struct
 const string read_scanraw(
-	int fd, int zero_level, double start_freq, double stop_freq, long int steps, float rbw, const string &start_time, fstream &output)
+	int fd, int zero_level, log_header_t &header, fstream &output)
 {
 	string response;
 	uint8_t c;
@@ -96,7 +96,8 @@ const string read_scanraw(
 	int x_count = 0;
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	output << format("# {:.06f},{:.06f},{},{:.03f},{},{}\n", start_freq, stop_freq, steps, rbw, start_time, time_str());
+	output << format("# {:.06f},{:.06f},{},{:.03f},{},{}\n",
+		header.start_freq, header.stop_freq, header.steps, header.rbw, header.start_time, time_str());
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)
 	{
@@ -168,10 +169,16 @@ int main(int argc, char *argv[])
 {
 
 	string ttydev = "";
-	double start_freq_MHz = 1;	// in MHz
-	double stop_freq_MHz = 30;	// same as above
-	float step_freq_kHz = 10;	// in kHz
-	float rbw_kHz = 10;	// RBW in kHz
+	double step_freq_kHz = 10;
+	log_header_t h =
+	{
+		.start_freq = 1,
+		.stop_freq = 30,
+		.steps = 2901,
+		.rbw = 10,
+		.start_time = "",
+		.end_time = ""
+	};
 	string filename_prefix = "sp";
 	bool loop = 0; // whether to run in a loop or not
 	int interval = 60; // interval in seconds
@@ -187,16 +194,16 @@ int main(int argc, char *argv[])
 				ttydev = optarg;
 				break;
 			case 's':
-				start_freq_MHz = atof(optarg);
+				h.start_freq = atof(optarg);
 				break;
 			case 'e':
-				stop_freq_MHz = atof(optarg);
+				h.stop_freq = atof(optarg);
 				break;
 			case 'k':
 				step_freq_kHz = atof(optarg);
 				break;
 			case 'r':
-				rbw_kHz = atof(optarg);
+				h.rbw = atof(optarg);
 				break;
 			case 'p':
 				filename_prefix = optarg;
@@ -218,7 +225,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Sanity check
-	if_error(start_freq_MHz > stop_freq_MHz, "Error: start freq > stop freq");
+	if_error(h.start_freq > h.stop_freq, "Error: start freq > stop freq");
 	if_error(ttydev.empty(), "Error: no tty device specified");
 
 	// Open the serial port
@@ -249,7 +256,7 @@ int main(int argc, char *argv[])
 	tcsetattr(fd, TCSANOW, &tty);
 
 	cerr << format("tty = {}, start = {:.6f}MHz, stop = {:.6f}MHz, step = {:.3f}kHz, rbw = {:.3f}kHz, filename prefix = \"{}\"\n",
-		ttydev, start_freq_MHz, stop_freq_MHz, step_freq_kHz, rbw_kHz, filename_prefix);
+		ttydev, h.start_freq, h.stop_freq, step_freq_kHz, h.rbw, filename_prefix);
 
 	print("Initializing...\n\n");
 	// Send init command
@@ -257,16 +264,21 @@ int main(int argc, char *argv[])
 	read_response(fd);
 	send_cmd(fd, "pause");
 	read_response(fd);
-	send_cmd(fd, "rbw "+ to_string(rbw_kHz));
+	send_cmd(fd, "rbw "+ to_string(h.rbw));
 	read_response(fd);
 
 	print("Sweeping...\n\n");
+	// Calculate the number of steps
+	double steps_floating = (h.stop_freq - h.start_freq) / (step_freq_kHz / 1e3)  + 1;
+	if(ceil(steps_floating) != steps_floating)
+		print("Warning: the number of steps will not be an integer, the actual number of steps would be {}\n", ceil(steps_floating));
+	h.steps = ceil(steps_floating);
 	// construct the sweep command
-	long int steps = (stop_freq_MHz - start_freq_MHz) / (step_freq_kHz / 1e3)  + 1;
-	const string scanraw_cmd = format("scanraw {:.0f} {:.0f} {}", start_freq_MHz * 1e6, stop_freq_MHz * 1e6, steps);
+	const string scanraw_cmd = format("scanraw {:.0f} {:.0f} {}", h.start_freq * 1e6, h.stop_freq * 1e6, h.steps);
 	
 	fstream output;
 	string start_time = time_str();
+	h.start_time = start_time;
 	string filename = new_logfile(output, filename_prefix, start_time);
 
 	int zero_level = ZERO_LEVEL_ULTRA;
@@ -288,8 +300,9 @@ int main(int argc, char *argv[])
 			cout << format("\r[{:8d}] ", record_count) << flush;
 			std::this_thread::sleep_until(awake_time(interval));
 			start_time = time_str();
+			h.start_time = start_time;
 			send_cmd(fd, scanraw_cmd);
-			read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
+			read_scanraw(fd, zero_level, h, output);
 			record_count++;
 
 			// rotate file
@@ -305,7 +318,7 @@ int main(int argc, char *argv[])
 	else
 	{
 		send_cmd(fd, scanraw_cmd);
-		read_scanraw(fd, zero_level, start_freq_MHz, stop_freq_MHz, steps, rbw_kHz, start_time, output);
+		read_scanraw(fd, zero_level, h, output);
 	}
 	output.close();
 	cout << endl;

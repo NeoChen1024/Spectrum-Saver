@@ -33,3 +33,13 @@ void static if_error(bool condition, const string &message)
 		exit(1);
 	}
 }
+
+typedef struct log_header
+{
+	double start_freq;
+	double stop_freq;
+	size_t steps;
+	float rbw;
+	string start_time;
+	string end_time;
+} log_header_t;
