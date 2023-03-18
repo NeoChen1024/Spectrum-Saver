@@ -47,7 +47,7 @@ using std::to_string;
 int send_cmd(int fd, string cmd)
 {
 	// Send commands though fd
-	cerr << "<< " << cmd << endl;
+	//cerr << "<< " << cmd << endl;
 	cmd += "\r";
 
 	write(fd, cmd.c_str(), cmd.length());
@@ -83,7 +83,7 @@ const string read_scanraw(
 	uint8_t c;
 	char str[PATH_MAX];
 	
-	fprintf(stderr, "[%s] Reading scanraw...", time_str().c_str());
+	fprintf(stderr, "[%s] Reading... ", time_str().c_str());
 	while(read(fd, &c, 1) > 0)
 	{
 		response += c;
@@ -118,7 +118,7 @@ const string read_scanraw(
 		}
 	}
 	output << endl; // one empty line between each scan
-	fprintf(stderr, "  DONE!\n");
+	fprintf(stderr, "  done\t\t");
 	return response;
 }
 
@@ -288,7 +288,7 @@ int main(int argc, char *argv[])
 	{
 		while(1)
 		{
-			fprintf(stderr, "Sleeping  ");
+			fprintf(stderr, "\r[\t%zu] ", record_count);
 			std::this_thread::sleep_until(awake_time(interval));
 			start_time = time_str();
 			send_cmd(fd, ss.str());
@@ -298,6 +298,7 @@ int main(int argc, char *argv[])
 			// rotate file
 			if(record_count >= MAX_RECORDS)
 			{
+				cerr << "\nRotating file..." << endl << endl;
 				output.close();
 				output = new_logfile(filename_prefix, start_time);
 				record_count = 0;
