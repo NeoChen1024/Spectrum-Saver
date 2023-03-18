@@ -8,12 +8,9 @@ CFLAGS	= $(FLAGS) $(DBG) -std=c99
 CXXFLAGS = $(FLAGS) $(DBG) -std=c++20
 PRGS	= spsave log2png
 
-.PHONY: all clean countline
+.PHONY: all clean strip
 
 all: $(PRGS)
 
-countline:
-	wc -l *.h *.c
-
 clean:
-	rm -f $(OBJS) $(PRGS) *.o *.log
+	rm -f $(OBJS) $(PRGS) *.o
