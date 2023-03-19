@@ -17,13 +17,10 @@
  */
 
 #include <iostream>
-#include <filesystem>
 #include <fstream>
 #include <string>
-#include <string_view>
 #include <Magick++.h>
 #include <vector>
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -37,13 +34,9 @@ using std::cout;
 using std::cerr;
 using std::endl;
 using std::string;
-using std::string_view;
 using std::to_string;
 using std::vector;
-using std::sort;
 using std::fstream;
-using std::filesystem::directory_iterator;
-using std::filesystem::path;
 using namespace Magick;
 using MagickCore::Quantum;
 Quantum MaxRGB = QuantumRange;
@@ -115,9 +108,14 @@ void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &s
 		}
 		else
 		{
-			if_error(true, "Error: invalid header line: " + line);
+			print("Error: at line {}, invalid header line: {}\n", line_count, line);
+			print("Not processing the rest of the file");
+			break;
+	
 		}
 	}
+
+	if_error(record_count == 0, "Error: no valid record found in log file");
 
 	// check if all records have the same number of steps
 	for(size_t i = 1; i < record_count; i++)
