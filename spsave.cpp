@@ -311,7 +311,7 @@ int main(int argc, char *argv[])
 			{
 				record_count = 0;
 				// old log file will be closed in new_logfile()
-				filename = new_logfile(output, filename_prefix, start_time);
+				filename = new_logfile(output, filename_prefix, time_str());
 				print("\n\nNew log file: {}\n", filename);
 			}
 		}
