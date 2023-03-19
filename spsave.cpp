@@ -264,7 +264,8 @@ int main(int argc, char *argv[])
 	read_response(fd);
 	send_cmd(fd, "pause");
 	read_response(fd);
-	send_cmd(fd, "rbw "+ to_string(h.rbw));
+	//send_cmd(fd, "rbw "+ to_string(h.rbw));
+	send_cmd(fd, format("rbw {:.1f}", h.rbw));
 	read_response(fd);
 
 	print("Sweeping...\n\n");
@@ -311,7 +312,7 @@ int main(int argc, char *argv[])
 				record_count = 0;
 				// old log file will be closed in new_logfile()
 				filename = new_logfile(output, filename_prefix, start_time);
-				print("\nNew log file: {}\n\n", filename);
+				print("\n\nNew log file: {}\n", filename);
 			}
 		}
 	}
