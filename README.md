@@ -10,6 +10,11 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
  $ git clone --recursive https://github.com/NeoChen1024/Spectrum-Saver.git
 ```
 
+### Dependencies:
+
+* [{fmt}](https://github.com/fmtlib/fmt "GitHub repo") string formatting library
+* Modern version of GCC or Clang for C++20 support
+
 ### Building:
 
 ```shell
@@ -56,5 +61,4 @@ $ make
 
 ### Credits:
 
-* [tinycolormap](https://github.com/yuki-koyama/tinycolormap "GitHub repo") for this awesome colormap librarylib
-* [{fmt}](https://github.com/fmtlib/fmt "GitHub repo") string formatting library
+* [tinycolormap](https://github.com/yuki-koyama/tinycolormap "GitHub repo") for this awesome colormap library
