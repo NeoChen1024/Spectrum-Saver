@@ -59,11 +59,20 @@ bool parse_header(const string &line, log_header_t &h)
 
 	// sanity check
 	if(h.start_freq >= h.stop_freq)
+	{
+		cerr << "Error: start_freq >= stop_freq" << endl;
 		return false;
+	}
 	if(h.steps == 0)
+	{
+		cerr << "Error: steps == 0" << endl;
 		return false;
+	}
 	if(h.rbw <= 0 || h.rbw > 1000)
+	{
+		cerr << "Error: rbw <= 0 || rbw > 1000" << endl;
 		return false;
+	}
 
 	return true;
 }
