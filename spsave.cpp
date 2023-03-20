@@ -212,6 +212,13 @@ int main(int argc, char *argv[])
 				break;
 			case 'i':
 				interval = atoi(optarg);
+				if(60 % interval != 0)
+				{
+					cerr <<
+						"Warning: interval " + to_string(interval) +
+						" is not a factor of 60, correct behavior of log2png is not guaranteed"
+						<< endl;
+				}
 				break;
 			case 'm':
 				model = optarg;
