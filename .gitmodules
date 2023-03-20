@@ -4,3 +4,6 @@
 [submodule "fmt"]
 	path = contrib/fmt
 	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/date"]
+	path = contrib/date
+	url = https://github.com/HowardHinnant/date.git
