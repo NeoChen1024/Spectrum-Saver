@@ -10,7 +10,7 @@ constexpr static int ZERO_LEVEL_ULTRA =	174;
 
 // Font for info text
 // Too long, can't be constexpr
-#define FONT_FAMILY	"Iosevka Term Slab"
+constexpr static string FONT_FAMILY{"Iosevka Term"};
 
 // Height of banner and footer in pixels
 constexpr static int BANNER_HEIGHT{64};
