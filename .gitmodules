@@ -1,6 +1,3 @@
 [submodule "tinycolormap"]
 	path = contrib/tinycolormap
 	url = https://github.com/yuki-koyama/tinycolormap.git
-[submodule "fmt"]
-	path = contrib/fmt
-	url = https://github.com/fmtlib/fmt.git
