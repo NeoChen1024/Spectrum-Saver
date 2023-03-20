@@ -304,7 +304,7 @@ int main(int argc, char *argv[])
 	{
 		while(1)
 		{
-			cout << format("\r[{:8d}] ", record_count) << flush;
+			cout << format("\r[{:8d}] ", record_count + 1) << flush; // Displayed value is 1-based
 			std::this_thread::sleep_until(awake_time(interval));
 			start_time = time_str();
 			h.start_time = start_time;
