@@ -89,12 +89,12 @@ bool parse_header(const string &line, log_header_t &h)
 // parse log file
 void parse_logfile(
 	vector<float> &power_data,
-	log_header_t &h,
+	log_header_t &last_header,
 	size_t &record_count,
 	fstream &logfile_stream,
-	string &first_start_time,
-	string &last_end_time)
+	string &first_start_time)
 {
+	log_header_t h; // current header
 	log_header_t first_header
 	{
 		.start_freq = 0,
@@ -179,8 +179,8 @@ void parse_logfile(
 
 	// save the first start time
 	first_start_time = first_header.start_time;
-	// save the last end time
-	last_end_time = h.end_time;
+	// store the last header
+	last_header = h;
 }
 
 void draw_spectrogram(size_t width, vector<float> &power_data, Quantum *pixels)
@@ -235,8 +235,6 @@ int main(int argc, char *argv[])
 
 	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
 
-	log_header_t h;
-
 	// file info
 	size_t record_count = 0;
 
@@ -246,12 +244,12 @@ int main(int argc, char *argv[])
 	logfile_stream.open(logfile_name, std::ios::in);
 	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
 
+	log_header_t h;
 	vector<float> power_data;
 	string first_start_time = "";
-	string last_end_time = "";
 
 	// go through all headers to get record count & validate everything
-	parse_logfile(power_data, h, record_count, logfile_stream, first_start_time, last_end_time);
+	parse_logfile(power_data, h, record_count, logfile_stream, first_start_time);
 
 	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
 	
@@ -264,7 +262,7 @@ int main(int argc, char *argv[])
 		record_count = MAX_RECORDS;
 	}
 
-	string output_name = filename_prefix + "." + last_end_time + ".png";
+	string output_name = filename_prefix + "." + h.end_time + ".png";
 
 	// create the image
 
@@ -273,6 +271,7 @@ int main(int argc, char *argv[])
 
 	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
+	image.comment(graph_title);
 
 	// Set font style & color
 	image.textAntiAlias(true);
