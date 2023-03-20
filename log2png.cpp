@@ -17,6 +17,7 @@
  */
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -88,10 +89,9 @@ bool parse_header(const string &line, log_header_t &h)
 // parse log file
 void parse_logfile(
 	vector<float> &power_data,
-	log_header_t &last_header,
-	size_t &record_count,
-	fstream &logfile_stream,
-	string &first_start_time)
+	vector<log_header_t> &headers,
+	fstream &logfile_stream
+)
 {
 	log_header_t h; // current header
 	log_header_t first_header
@@ -145,7 +145,8 @@ void parse_logfile(
 					format("Error: rbw mismatch at line #{}: {} != {}",
 						line_count, h.rbw, first_header.rbw));
 			}
-			record_count++;
+
+			headers.emplace_back(h);
 			continue;
 		}
 		else if(line_count % lines_per_record == 0)
@@ -170,16 +171,11 @@ void parse_logfile(
 		}
 	}
 
-	if_error(record_count == 0, "Error: no valid record found in log file");
+	if_error(headers.size() == 0, "Error: no valid record found in log file");
 
 	// check if size of power_data is correct
-	if(power_data.size() != record_count * first_header.steps)
+	if(power_data.size() != headers.size() * first_header.steps)
 		if_error(true, "Error: power_data count is not correct");
-
-	// save the first start time
-	first_start_time = first_header.start_time;
-	// store the last header
-	last_header = h;
 }
 
 void draw_spectrogram(const size_t width, const size_t height, vector<float> &power_data, Image &image)
@@ -237,33 +233,34 @@ int main(int argc, char *argv[])
 
 	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
 
-	// file info
-	size_t record_count = 0;
-
 	Magick::InitializeMagick(*argv);
+
+/* ==================== *\
+|| Text Processing Part ||
+\* ==================== */
 
 	// open log file
 	logfile_stream.open(logfile_name, std::ios::in);
 	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
 
-	log_header_t h;
+	vector<log_header_t> headers;
 	vector<float> power_data;
 	string first_start_time = "";
 
 	// go through all headers to get record count & validate everything
-	parse_logfile(power_data, h, record_count, logfile_stream, first_start_time);
+	parse_logfile(power_data, headers, logfile_stream);
+
+	const auto record_count = headers.size();
+	// get last header for easy access
+	const auto &h = headers.back();
 
 	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
-	
-	// remove records if total number exceeds MAX_RECORDS
-	if(record_count > MAX_RECORDS)
-	{
-		print("Warning: total number of records exceeds {}, removing {} records from the beginning\n",
-			MAX_RECORDS, record_count - MAX_RECORDS);
-		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * h.steps);
-		record_count = MAX_RECORDS;
-	}
 
+/* ===================== *\
+|| Image Processing Part ||
+\* ===================== */
+
+	// ex. sp.20230320T220505.png
 	string output_name = filename_prefix + "." + h.end_time + ".png";
 
 	// create the image
@@ -292,10 +289,10 @@ int main(int argc, char *argv[])
 	print("Drawing spectrogram... ");
 	draw_spectrogram(width, height, power_data, image);
 
-	auto drawing_end_time = std::chrono::system_clock::now();
-	auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
+	const auto drawing_end_time = std::chrono::system_clock::now();
+	const auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
 	assert(drawing_duration.count() > 0);
-	size_t spectrogram_pixel_count = h.steps * record_count;
+	const size_t spectrogram_pixel_count = h.steps * record_count;
 
 	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
 		(double)spectrogram_pixel_count / 1e6, // Mpix
