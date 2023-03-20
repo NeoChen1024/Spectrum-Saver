@@ -19,16 +19,17 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <Magick++.h>
 #include <vector>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <unistd.h>
 #include <limits.h>
+#include <omp.h>
+#include <Magick++.h>
+#include <tinycolormap.hpp>
 #include "common.hpp"
 #include "config.hpp"
-#include <tinycolormap.hpp>
 
 using std::cout;
 using std::cerr;
@@ -132,6 +133,8 @@ void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &s
 
 void draw_spectrogram(size_t width, size_t height, vector<float> &power_data, Quantum *pixels)
 {
+	// trivial to parallelize, so why not?
+	#pragma omp parallel for
 	for(size_t i = 0; i < power_data.size(); i++)
 	{
 		// get x & y coordinates
