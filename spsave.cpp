@@ -224,6 +224,8 @@ int main(int argc, char *argv[])
 				model = optarg;
 				break;
 			case 'h':
+				help_msg(argv);
+				return 0;
 			default:
 				help_msg(argv);
 				return 1;
