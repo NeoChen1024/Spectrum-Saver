@@ -78,10 +78,18 @@ bool parse_header(const string &line, log_header_t &h)
 }
 
 // parse log file
-void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &step_counts, size_t &record_count, fstream &logfile_stream, string &first_start_time)
+void parse_logfile(
+	vector<float> &power_data,
+	log_header_t &h,
+	size_t &record_count,
+	fstream &logfile_stream,
+	string &first_start_time,
+	string &last_end_time)
 {
 	size_t line_count = 0;
 	string line;
+	vector<size_t> step_counts;
+
 	while(getline(logfile_stream, line))
 	{
 		line_count++;
@@ -119,7 +127,7 @@ void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &s
 		else
 		{
 			print("Error: at line {}, invalid header line: {}\n", line_count, line);
-			print("Not processing the rest of the file");
+			print("Not processing the rest of the file\n");
 			break;
 	
 		}
@@ -138,6 +146,8 @@ void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &s
 	if(power_data.size() != record_count * h.steps)
 		if_error(true, "Error: power_data count is not correct");
 
+	// save the last end time
+	last_end_time = h.end_time;
 }
 
 void draw_spectrogram(size_t width, vector<float> &power_data, Quantum *pixels)
@@ -204,11 +214,12 @@ int main(int argc, char *argv[])
 	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
 
 	vector<float> power_data;
-	vector<size_t> step_counts;
 	string first_start_time = "";
+	string last_end_time = "";
+
 
 	// go through all headers to get record count & validate everything
-	parse_logfile(power_data, h, step_counts, record_count, logfile_stream, first_start_time);
+	parse_logfile(power_data, h, record_count, logfile_stream, first_start_time, last_end_time);
 
 	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
 	
@@ -220,8 +231,6 @@ int main(int argc, char *argv[])
 		power_data.erase(power_data.begin(), power_data.begin() + (record_count - MAX_RECORDS) * h.steps);
 		record_count = MAX_RECORDS;
 	}
-
-	const string last_end_time = h.end_time;
 
 	string output_name = filename_prefix + "." + last_end_time + ".png";
 
@@ -257,15 +266,13 @@ int main(int argc, char *argv[])
 	assert(drawing_duration.count() > 0);
 	size_t spectrogram_pixel_count = h.steps * record_count;
 
-	//cerr << "Drawing took " << (double)drawing_duration.count() / 1e9 << " seconds, at " <<
-	//	(double)spectrogram_pixel_count / (drawing_duration.count() / 1e3) << "Mpix/s" << endl;
 	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
 		(double)spectrogram_pixel_count / 1e6, // Mpix
 		(double)drawing_duration.count() / 1e9, // seconds
 		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
 	);
 
-	string current_time = time_str();
+	const string current_time = time_str();
 
 	// Footer text
 	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
