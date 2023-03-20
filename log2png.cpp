@@ -131,7 +131,7 @@ void parse_logfile(vector<float> &power_data, log_header_t &h, vector<size_t> &s
 
 }
 
-void draw_spectrogram(size_t width, size_t height, vector<float> &power_data, Quantum *pixels)
+void draw_spectrogram(size_t width, vector<float> &power_data, Quantum *pixels)
 {
 	// trivial to parallelize, so why not?
 	#pragma omp parallel for
@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
 	auto drawing_start_time = std::chrono::system_clock::now();
 
 	print("Drawing spectrogram... ");
-	draw_spectrogram(width, height, power_data, pixels);
+	draw_spectrogram(width, power_data, pixels);
 	view.sync();
 	image.modifyImage();
 
