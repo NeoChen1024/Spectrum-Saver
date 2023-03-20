@@ -42,6 +42,15 @@ using namespace Magick;
 using MagickCore::Quantum;
 Quantum MaxRGB = QuantumRange;
 
+static const std::chrono::time_point<std::chrono::system_clock> time_from_str(const string &str)
+{
+	std::istringstream ss(str);
+	std::tm tm;
+	ss >> std::get_time(&tm, "%Y%m%dT%H%M%S");
+	if_error(!ss.fail(), "Failed to parse time string");
+	return std::chrono::system_clock::from_time_t(std::mktime(&tm));
+}
+
 // parse log record header line
 // # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 // formatted by:
@@ -86,6 +95,7 @@ void parse_logfile(
 	string &first_start_time,
 	string &last_end_time)
 {
+	log_header_t first_header;
 	string line;
 	size_t line_count = 0;
 	size_t first_step_count = 0;
@@ -114,12 +124,22 @@ void parse_logfile(
 				first_start_time = h.start_time;
 				first_step_count = h.steps;
 				lines_per_record = h.steps + 2; // +1 for header, +1 for trailing newline
+				first_header = h;
 			}
 			else
 			{
+				if_error(h.start_freq != first_header.start_freq,
+					format("Error: start_freq mismatch at line #{}: {} != {}",
+						line_count, h.start_freq, first_header.start_freq));
+				if_error(h.stop_freq != first_header.stop_freq,
+					format("Error: stop_freq mismatch at line #{}: {} != {}",
+						line_count, h.stop_freq, first_header.stop_freq));
 				if_error(h.steps != first_step_count,
 					format("Error: steps count mismatch at line #{}: {} != {}",
 						line_count, h.steps, first_step_count));
+				if_error(h.rbw != first_header.rbw,
+					format("Error: rbw mismatch at line #{}: {} != {}",
+						line_count, h.rbw, first_header.rbw));
 			}
 			record_count++;
 			continue;
