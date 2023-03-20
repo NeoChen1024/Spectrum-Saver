@@ -40,7 +40,6 @@ using std::vector;
 using std::fstream;
 using namespace Magick;
 using MagickCore::Quantum;
-Quantum MaxRGB = QuantumRange;
 
 static const std::chrono::time_point<std::chrono::system_clock> time_from_str(const string &str)
 {
@@ -183,24 +182,27 @@ void parse_logfile(
 	last_header = h;
 }
 
-void draw_spectrogram(size_t width, vector<float> &power_data, Quantum *pixels)
+void draw_spectrogram(const size_t width, const size_t height, vector<float> &power_data, Image &image)
 {
+	Pixels view(image);
+	Quantum *pixels = view.get(0, 0, width, height);
+	const uint8_t channels = image.channels();
+
+	pixels += width * channels * (BANNER_HEIGHT); // skip banner
+
 	// trivial to parallelize, so why not?
 	#pragma omp parallel for
 	for(size_t i = 0; i < power_data.size(); i++)
 	{
-		// get x & y coordinates
-		const size_t x = i % width;
-		const size_t y = i / width;
-
 		const auto mappedcolor = tinycolormap::GetColor((power_data.at(i) + 120) / 100, tinycolormap::ColormapType::Cubehelix);
 
 		// Raw pixel access is faster than directly using pixelColor()
-		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 0] = mappedcolor.r() * MaxRGB;
-		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 1] = mappedcolor.g() * MaxRGB;
-		pixels[(y + BANNER_HEIGHT) * width * 4 + x * 4 + 2] = mappedcolor.b() * MaxRGB;
-		// ignore alpha channel
+		pixels[i * channels + 0] = mappedcolor.r() * QuantumRange;
+		pixels[i * channels + 1] = mappedcolor.g() * QuantumRange;
+		pixels[i * channels + 2] = mappedcolor.b() * QuantumRange;
 	}
+	view.sync();
+	image.modifyImage();
 }
 
 int main(int argc, char *argv[])
@@ -271,6 +273,8 @@ int main(int argc, char *argv[])
 
 	Image image(Geometry(width, height), Color("black"));
 	image.type(TrueColorType);
+	image.depth(8); // 8 bits per channel is enough for most usage
+	image.modifyImage();
 	image.comment(graph_title);
 
 	// Set font style & color
@@ -282,15 +286,11 @@ int main(int argc, char *argv[])
 	image.annotate(graph_title, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
 	image.modifyImage();
 
-	Pixels view(image);
-	Quantum *pixels = view.get(0, 0, width, height);
-
+	// Calculate drawing speed
 	auto drawing_start_time = std::chrono::system_clock::now();
 
 	print("Drawing spectrogram... ");
-	draw_spectrogram(width, power_data, pixels);
-	view.sync();
-	image.modifyImage();
+	draw_spectrogram(width, height, power_data, image);
 
 	auto drawing_end_time = std::chrono::system_clock::now();
 	auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
