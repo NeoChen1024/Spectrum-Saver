@@ -86,64 +86,70 @@ void parse_logfile(
 	string &first_start_time,
 	string &last_end_time)
 {
-	size_t line_count = 0;
 	string line;
-	vector<size_t> step_counts;
+	size_t line_count = 0;
+	size_t first_step_count = 0;
+	size_t lines_per_record = SIZE_MAX;
+
+	// types of lines:
+	// 	record header: # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+	// 	data: <dbm>\n<dbm>\n<dbm>\n...
+	// 	trailing newline of a record: \n
+	// any other line is invalid
 
 	while(getline(logfile_stream, line))
 	{
 		line_count++;
-		if_error(line.empty(), "Error: empty line in log file");
 
-		if(parse_header(line, h))
+		// parse header
+		if(line_count % lines_per_record == 1)
 		{
-			// save the first start time
-			if(first_start_time.empty())
-				first_start_time = h.start_time;
-			step_counts.emplace_back(h.steps);
-			record_count++;
-			for(size_t i = 0; i < h.steps + 1; i++)
-			{
-				getline(logfile_stream, line);
-				line_count++;
-				// check if it's valid floating point number
-				if(i == h.steps)
-				{
-					if_error(line != "", "Error: at record #" + to_string(record_count) + ", last line of record is not empty");
-					continue; // skip the last empty line
-				}
+			bool ret = parse_header(line, h);
+			if(!ret)
+				if_error(true, "Error: invalid header line");
 
-				try
-				{
-					power_data.emplace_back(std::stof(line));
-				}
-				catch(const std::exception& e)
-				{
-					std::cerr << e.what() << '\n';
-					if_error(true, format("Error: at record #{}, line {}, invalid data line: {}", record_count, line_count, line));
-				}
+			if(first_step_count == 0)
+			{
+				// perserve the first start time
+				first_start_time = h.start_time;
+				first_step_count = h.steps;
+				lines_per_record = h.steps + 2; // +1 for header, +1 for trailing newline
 			}
+			else
+			{
+				if_error(h.steps != first_step_count,
+					format("Error: steps count mismatch at line #{}: {} != {}",
+						line_count, h.steps, first_step_count));
+			}
+			record_count++;
+			continue;
+		}
+		else if(line_count % lines_per_record == 0)
+		{
+			// trailing newline of a record
+			if_error(!line.empty(), format("Error: newline expected at line #{}", line_count));
+			continue;
 		}
 		else
 		{
-			print("Error: at line {}, invalid header line: {}\n", line_count, line);
-			print("Not processing the rest of the file\n");
-			break;
-	
+			// data line
+			try
+			{
+				power_data.emplace_back(std::stod(line));
+			}
+			catch(const std::exception& e)
+			{
+				cerr << format("std::stod exception: {}\n", e.what());
+				cerr << format("Error: failed to parse double from line {}: \"{}\"\n", line_count, line);
+			}
+			continue;
 		}
 	}
 
 	if_error(record_count == 0, "Error: no valid record found in log file");
 
-	// check if all records have the same number of steps
-	for(size_t i = 1; i < record_count; i++)
-	{
-		if(step_counts[i] != step_counts[i - 1])
-			if_error(true, "Error: record #" + to_string(i) + " has different number of steps than record #1");
-	}
-
 	// check if size of power_data is correct
-	if(power_data.size() != record_count * h.steps)
+	if(power_data.size() != record_count * first_step_count)
 		if_error(true, "Error: power_data count is not correct");
 
 	// save the last end time
@@ -207,7 +213,7 @@ int main(int argc, char *argv[])
 	// file info
 	size_t record_count = 0;
 
-	InitializeMagick(*argv);
+	Magick::InitializeMagick(*argv);
 
 	// open log file
 	logfile_stream.open(logfile_name, std::ios::in);
@@ -216,7 +222,6 @@ int main(int argc, char *argv[])
 	vector<float> power_data;
 	string first_start_time = "";
 	string last_end_time = "";
-
 
 	// go through all headers to get record count & validate everything
 	parse_logfile(power_data, h, record_count, logfile_stream, first_start_time, last_end_time);
