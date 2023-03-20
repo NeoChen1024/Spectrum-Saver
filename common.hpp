@@ -17,25 +17,6 @@ using std::endl;
 using fmt::format;
 using fmt::print;
 
-static auto now(void)
-{
-	return std::chrono::system_clock::now();
-}
-
-static const string time_str(void)
-{
-	return format("{:%Y%m%dT%H%M%S}", std::chrono::floor<std::chrono::seconds>(now()));
-}
-
-void static if_error(bool condition, const string &message)
-{
-	if(condition)
-	{
-		cerr << message << endl;
-		exit(1);
-	}
-}
-
 typedef struct log_header
 {
 	double start_freq;
@@ -45,3 +26,22 @@ typedef struct log_header
 	string start_time;
 	string end_time;
 } log_header_t;
+
+void static inline if_error(bool condition, const string &message)
+{
+	if(condition)
+	{
+		cerr << message << endl;
+		exit(1);
+	}
+}
+
+static auto now(void)
+{
+	return std::chrono::system_clock::now();
+}
+
+static const string time_str(void)
+{
+	return format("{:%Y%m%dT%H%M%S}", std::chrono::floor<std::chrono::seconds>(now()));
+}
