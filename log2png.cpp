@@ -95,10 +95,18 @@ void parse_logfile(
 	string &first_start_time,
 	string &last_end_time)
 {
-	log_header_t first_header;
+	log_header_t first_header
+	{
+		.start_freq = 0,
+		.stop_freq = 0,
+		.steps = 0,
+		.rbw = 0,
+		.start_time = "",
+		.end_time = ""
+	};
+
 	string line;
 	size_t line_count = 0;
-	size_t first_step_count = 0;
 	size_t lines_per_record = SIZE_MAX;
 
 	// types of lines:
@@ -118,11 +126,8 @@ void parse_logfile(
 			if(!ret)
 				if_error(true, "Error: invalid header line");
 
-			if(first_step_count == 0)
+			if(first_header.steps == 0)
 			{
-				// perserve the first start time
-				first_start_time = h.start_time;
-				first_step_count = h.steps;
 				lines_per_record = h.steps + 2; // +1 for header, +1 for trailing newline
 				first_header = h;
 			}
@@ -134,9 +139,9 @@ void parse_logfile(
 				if_error(h.stop_freq != first_header.stop_freq,
 					format("Error: stop_freq mismatch at line #{}: {} != {}",
 						line_count, h.stop_freq, first_header.stop_freq));
-				if_error(h.steps != first_step_count,
+				if_error(h.steps != first_header.steps,
 					format("Error: steps count mismatch at line #{}: {} != {}",
-						line_count, h.steps, first_step_count));
+						line_count, h.steps, first_header.steps));
 				if_error(h.rbw != first_header.rbw,
 					format("Error: rbw mismatch at line #{}: {} != {}",
 						line_count, h.rbw, first_header.rbw));
@@ -169,9 +174,11 @@ void parse_logfile(
 	if_error(record_count == 0, "Error: no valid record found in log file");
 
 	// check if size of power_data is correct
-	if(power_data.size() != record_count * first_step_count)
+	if(power_data.size() != record_count * first_header.steps)
 		if_error(true, "Error: power_data count is not correct");
 
+	// save the first start time
+	first_start_time = first_header.start_time;
 	// save the last end time
 	last_end_time = h.end_time;
 }
