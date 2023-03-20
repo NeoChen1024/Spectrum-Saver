@@ -134,10 +134,9 @@ constexpr auto ceil(std::chrono::time_point<Clock, Duration1> t, Duration2 m) no
 
 auto awake_time(int interval)
 {
-	auto now = std::chrono::system_clock::now();
 	std::chrono::time_point<std::chrono::system_clock> next;
 	
-	return ceil(now, std::chrono::seconds(interval));
+	return ceil(now(), std::chrono::seconds(interval));
 }
 
 void help_msg(char *argv[])
@@ -320,6 +319,7 @@ int main(int argc, char *argv[])
 	{
 		send_cmd(fd, scanraw_cmd);
 		read_scanraw(fd, zero_level, h, output);
+		send_cmd(fd, "resume");
 	}
 	output.close();
 	cout << endl;

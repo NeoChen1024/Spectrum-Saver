@@ -1,5 +1,6 @@
 #include <ctime>
 #include <string>
+#include <chrono>
 
 #define FMT_HEADER_ONLY
 #include <fmt/core.h>
@@ -16,13 +17,14 @@ using std::endl;
 using fmt::format;
 using fmt::print;
 
+static auto now(void)
+{
+	return std::chrono::system_clock::now();
+}
+
 static const string time_str(void)
 {
-	char time_str[256];
-	time_t current_time = time(NULL);
-	strftime(time_str, sizeof(time_str), "%Y%m%dT%H%M%S", gmtime(&current_time));
-
-	return string(time_str);
+	return format("{:%Y%m%dT%H%M%S}", std::chrono::floor<std::chrono::seconds>(now()));
 }
 
 void static if_error(bool condition, const string &message)
