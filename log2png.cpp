@@ -288,12 +288,13 @@ static fstream logfile_stream;
 static string logfile_name = "";
 static string filename_prefix = "sp";
 static string graph_title = "Unnamed Spectrogram";
+static bool do_gridlines = true;
 
 bool parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while((opt = getopt(argc, argv, "f:p:t:h")) != -1)
+	while((opt = getopt(argc, argv, "f:p:t:g:h")) != -1)
 	{
 		switch(opt)
 		{
@@ -305,6 +306,17 @@ bool parse_args(int argc, char *argv[])
 				break;
 			case 't':
 				graph_title = optarg;
+				break;
+			case 'g':
+				if(string(optarg) == "true")
+					do_gridlines = true;
+				else if(string(optarg) == "false")
+					do_gridlines = false;
+				else
+				{
+					cerr << "Error: invalid value for -g: " << optarg << endl;
+					return false;
+				}
 				break;
 			case 'h':
 			default:
@@ -381,7 +393,10 @@ try
 	draw_text(footer_info, FOOTER_HEIGHT, FOOTER_COLOR, Geometry(0, 0, 0, 0), Magick::SouthEastGravity, image);
 
 	// Draw gridlines
-	draw_vertical_gridlines(h.steps, record_count, h, image);
+	if(do_gridlines)
+	{
+		draw_vertical_gridlines(h.steps, record_count, h, image);
+	}
 
 	// write the image to a file
 	print("[{}] Writing image to {} ({}x{} @ {} colors)\n", current_time, output_name, width, height, image.totalColors());
