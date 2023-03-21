@@ -192,7 +192,8 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 	#pragma omp parallel for
 	for(size_t i = 0; i < power_data.size(); i++)
 	{
-		const auto mappedcolor = tinycolormap::GetColor((power_data.at(i) + 120) / 100, tinycolormap::ColormapType::Cubehelix);
+		const double value = (power_data.at(i) + 120) / 100;
+		const auto mappedcolor = tinycolormap::GetColor(value, tinycolormap::ColormapType::Cubehelix);
 
 		// Raw pixel access is faster than directly using pixelColor()
 		pixels[i * channels + 0] = mappedcolor.r() * QuantumRange;
@@ -207,7 +208,7 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 	assert(drawing_duration.count() > 0);
 	const size_t spectrogram_pixel_count = power_data.size();
 
-	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
+	print("Drawn spectrogram: {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
 		(double)spectrogram_pixel_count / 1e6, // Mpix
 		(double)drawing_duration.count() / 1e9, // seconds
 		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
@@ -228,6 +229,57 @@ void draw_text
 	image.fontPointsize(PX_TO_PT(px));
 	image.fillColor(color);
 	image.annotate(text, geom, gravity);
+	image.modifyImage();
+}
+
+void draw_vertical_gridlines(const size_t steps, const size_t records, const logheader_t &h, Image &image)
+{
+	const size_t xoffset = 0;
+	const size_t yoffset = BANNER_HEIGHT;
+
+	// draw vertical gridlines
+	// calculate gridline spacing from frequency range
+
+	const size_t start_freq = h.start_freq * 1e6;
+	const size_t stop_freq = h.stop_freq * 1e6;
+	const size_t step_freq = (stop_freq - start_freq) / (steps - 1);
+	const size_t freq_range = stop_freq - start_freq; // convert to Hz for easier calculation
+	size_t gridline_exponent = 100ULL * 1000 * 1000 * 1000; // 100 GHz
+	size_t gridline_spacing = SIZE_MAX;
+
+	Color gridline_color("grey");
+	gridline_color.quantumAlpha(QuantumRange * 0.75);
+	image.strokeColor(gridline_color);
+	image.strokeWidth(1);
+	image.strokeAntiAlias(false);
+
+	// find a gridline spacing that will result in at least MIN_GRIDLINES gridlines
+	while(freq_range / gridline_spacing < MIN_GRIDLINES)
+	{
+		gridline_spacing = gridline_exponent * 5;
+		if(freq_range / gridline_spacing >= MIN_GRIDLINES)
+			break;
+		gridline_spacing = gridline_exponent * 2;
+		if(freq_range / gridline_spacing >= MIN_GRIDLINES)
+			break;
+		gridline_spacing = gridline_exponent;
+		gridline_exponent /= 10;
+	}
+
+	print("Drawing frequency grid, freq_range: {} Hz, gridline_spacing: {} Hz\n", freq_range, gridline_spacing);
+
+	const size_t gridline_count = freq_range / gridline_spacing + 1;
+	// find point of the last gridline
+	const size_t last_gridline_point =  ((stop_freq / gridline_spacing * gridline_spacing) - start_freq) / step_freq;
+
+	std::vector<Magick::Drawable> draw_list;
+	for(size_t i = 0; i < gridline_count; i++)
+	{
+		const size_t x = xoffset + last_gridline_point - i * (gridline_spacing / step_freq);
+		const size_t h = records;
+		draw_list.emplace_back(Magick::DrawableLine(x, yoffset, x, yoffset + h));
+	}
+	image.draw(draw_list);
 	image.modifyImage();
 }
 
@@ -319,7 +371,6 @@ try
 	// Write banner text
 	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
 
-	print("Drawing spectrogram... ");
 	draw_spectrogram(width, height, power_data, image);
 
 	const string current_time = time_str();
@@ -329,8 +380,11 @@ try
 		headers.front().start_time, h.end_time, h.start_freq, h.stop_freq, record_count, h.steps, h.rbw, current_time);
 	draw_text(footer_info, FOOTER_HEIGHT, FOOTER_COLOR, Geometry(0, 0, 0, 0), Magick::SouthEastGravity, image);
 
+	// Draw gridlines
+	draw_vertical_gridlines(h.steps, record_count, h, image);
+
 	// write the image to a file
-	print("[{}] Writing image to {} ({}x{})\n", current_time, output_name, width, height);
+	print("[{}] Writing image to {} ({}x{} @ {} colors)\n", current_time, output_name, width, height, image.totalColors());
 	image.write(output_name);
 }
 catch(const StringException &e)

@@ -2,6 +2,9 @@
 
 /* options used by spsave: */
 
+// 1440 records would be 24 hours at 1 minute interval
+#define MAX_RECORDS	1440 
+
 // tinySA Zero Level, 128 for tinySA, 174 for tinySA Ultra
 constexpr static int ZERO_LEVEL =	128;
 constexpr static int ZERO_LEVEL_ULTRA =	174;
@@ -20,6 +23,5 @@ constexpr static string FOOTER_COLOR{"yellow"};
 
 #define PX_TO_PT(x)	((double)(x) * 72 / 96)
 
-// Also used by spsave to determine when to rotate log file
-// 1440 records would be 24 hours at 1 minute interval
-#define MAX_RECORDS	1440 
+// Minimum number of gridlines to draw
+constexpr static int MIN_GRIDLINES = 6;
