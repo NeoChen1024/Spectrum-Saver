@@ -277,7 +277,7 @@ void draw_vertical_gridlines(const size_t steps, const size_t records, const log
 	{
 		const size_t x = xoffset + last_gridline_point - i * (gridline_spacing / step_freq);
 		const size_t h = records;
-		draw_list.emplace_back(Magick::DrawableLine(x, yoffset, x, yoffset + h));
+		draw_list.emplace_back(Magick::DrawableLine(x, yoffset, x, yoffset + h - 1));
 	}
 	image.draw(draw_list);
 	image.modifyImage();
@@ -320,7 +320,8 @@ bool parse_args(int argc, char *argv[])
 				break;
 			case 'h':
 			default:
-				cerr << "Usage: " << argv[0] << " [-f <log file>] [-p <filename prefix>] [-t <graph title>]" << endl;
+				cerr << "Usage: " << argv[0] <<
+					" [-f <log file>] [-p <filename prefix>] [-t <graph title>] [-g <grid? true/false>]" << endl;
 				return false;
 		}
 	}
