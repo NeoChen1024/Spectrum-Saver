@@ -298,12 +298,14 @@ int main(int argc, char *argv[])
 	else
 		if_error(true, "Error: unknown model " + model);
 
-	// number of records written to file, will rotate file when it reaches MAX_RECORDS
-	size_t record_count = 0;
+	print("\nOpened log file: {}\n", filename);
 
 	// initiate sweep
 	if(loop)
 	{
+		// number of records written to file, will rotate file when it reaches MAX_RECORDS
+		size_t record_count = 0;
+
 		while(1)
 		{
 			cout << format("\r[{:8d}] ", record_count + 1) << flush; // Displayed value is 1-based
