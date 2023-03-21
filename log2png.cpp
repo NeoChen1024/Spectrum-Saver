@@ -122,8 +122,7 @@ void parse_logfile(
 		if(line_count % lines_per_record == 1)
 		{
 			bool ret = parse_header(line, h);
-			if(!ret)
-				if_error(true, "Error: invalid header line");
+			if_error(!ret, format("Error: invalid header at line #{}", line_count));
 
 			if(first_header.steps == 0)
 			{
@@ -186,6 +185,9 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 
 	pixels += width * channels * (BANNER_HEIGHT); // skip banner
 
+	// Measure speed
+	auto drawing_start_time = now();
+
 	// trivial to parallelize, so why not?
 	#pragma omp parallel for
 	for(size_t i = 0; i < power_data.size(); i++)
@@ -199,6 +201,18 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 	}
 	view.sync();
 	image.modifyImage();
+
+	const auto drawing_end_time = now();
+	const auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
+	assert(drawing_duration.count() > 0);
+	const size_t spectrogram_pixel_count = power_data.size();
+
+	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
+		(double)spectrogram_pixel_count / 1e6, // Mpix
+		(double)drawing_duration.count() / 1e9, // seconds
+		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
+	);
+
 }
 
 void draw_text
@@ -223,7 +237,7 @@ static string logfile_name = "";
 static string filename_prefix = "sp";
 static string graph_title = "Unnamed Spectrogram";
 
-void parse_args(int argc, char *argv[])
+bool parse_args(int argc, char *argv[])
 {
 	int opt;
 
@@ -243,11 +257,13 @@ void parse_args(int argc, char *argv[])
 			case 'h':
 			default:
 				cerr << "Usage: " << argv[0] << " [-f <log file>] [-p <filename prefix>] [-t <graph title>]" << endl;
-				exit(1);
+				return false;
 		}
 	}
 
 	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
+
+	return true;
 }
 
 int main(int argc, char *argv[])
@@ -257,7 +273,8 @@ try
 	
 	Magick::InitializeMagick(*argv);
 
-	parse_args(argc, argv);
+	if(parse_args(argc, argv) == false)
+		return EXIT_FAILURE;
 
 /* ==================== *\
 || Text Processing Part ||
@@ -302,22 +319,8 @@ try
 	// Write banner text
 	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
 
-	// Calculate drawing speed
-	auto drawing_start_time = std::chrono::system_clock::now();
-
 	print("Drawing spectrogram... ");
 	draw_spectrogram(width, height, power_data, image);
-
-	const auto drawing_end_time = std::chrono::system_clock::now();
-	const auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
-	assert(drawing_duration.count() > 0);
-	const size_t spectrogram_pixel_count = h.steps * record_count;
-
-	print("drawing {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
-		(double)spectrogram_pixel_count / 1e6, // Mpix
-		(double)drawing_duration.count() / 1e9, // seconds
-		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
-	);
 
 	const string current_time = time_str();
 
@@ -333,8 +336,8 @@ try
 catch(const std::exception &e)
 {
 	cerr << e.what() << endl;
-	return 1;
+	return EXIT_FAILURE;
 }
 
-	return 0;
+	return EXIT_SUCCESS;
 }
