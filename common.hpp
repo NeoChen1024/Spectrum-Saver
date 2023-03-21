@@ -26,12 +26,20 @@ typedef struct log_header
 	string end_time;
 } log_header_t;
 
+class StringException : public std::exception
+{
+public:
+	StringException(const string &message) : message(message) {}
+	virtual const char *what() const throw() { return message.c_str(); }
+private:
+	string message;
+};
+
 void static inline if_error(bool condition, const string &message)
 {
 	if(condition)
 	{
-		cerr << message << endl;
-		exit(1);
+		throw(StringException(message));
 	}
 }
 

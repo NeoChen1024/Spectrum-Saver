@@ -201,14 +201,30 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 	image.modifyImage();
 }
 
-int main(int argc, char *argv[])
+void draw_text
+(
+	const string &text,
+	const int px,
+	const Magick::Color &color,
+	const Magick::Geometry &geom,
+	const Magick::GravityType &gravity,
+	Image &image
+)
 {
-	fstream logfile_stream;
+	image.fontPointsize(PX_TO_PT(px));
+	image.fillColor(color);
+	image.annotate(text, geom, gravity);
+	image.modifyImage();
+}
 
-	string logfile_name = "";
-	string filename_prefix = "sp";
-	string graph_title = "Unnamed Spectrogram";
+static fstream logfile_stream;
 
+static string logfile_name = "";
+static string filename_prefix = "sp";
+static string graph_title = "Unnamed Spectrogram";
+
+void parse_args(int argc, char *argv[])
+{
 	int opt;
 
 	while((opt = getopt(argc, argv, "f:p:t:h")) != -1)
@@ -227,13 +243,21 @@ int main(int argc, char *argv[])
 			case 'h':
 			default:
 				cerr << "Usage: " << argv[0] << " [-f <log file>] [-p <filename prefix>] [-t <graph title>]" << endl;
-				return 1;
+				exit(1);
 		}
 	}
 
 	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
+}
 
+int main(int argc, char *argv[])
+{
+try
+{
+	
 	Magick::InitializeMagick(*argv);
+
+	parse_args(argc, argv);
 
 /* ==================== *\
 || Text Processing Part ||
@@ -245,7 +269,6 @@ int main(int argc, char *argv[])
 
 	vector<log_header_t> headers;
 	vector<float> power_data;
-	string first_start_time = "";
 
 	// go through all headers to get record count & validate everything
 	parse_logfile(power_data, headers, logfile_stream);
@@ -272,16 +295,12 @@ int main(int argc, char *argv[])
 	image.type(TrueColorType);
 	image.depth(8); // 8 bits per channel is enough for most usage
 	image.modifyImage();
-	image.comment(graph_title);
-
-	// Set font style & color
 	image.textAntiAlias(true);
 	image.fontFamily(FONT_FAMILY);
-	image.fillColor(Color(BANNER_COLOR));
+	image.comment(graph_title);
+
 	// Write banner text
-	image.fontPointsize(PX_TO_PT(BANNER_HEIGHT));
-	image.annotate(graph_title, Magick::Geometry(0, 0, 0, 0), Magick::NorthWestGravity);
-	image.modifyImage();
+	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
 
 	// Calculate drawing speed
 	auto drawing_start_time = std::chrono::system_clock::now();
@@ -303,16 +322,19 @@ int main(int argc, char *argv[])
 	const string current_time = time_str();
 
 	// Footer text
-	image.fontPointsize(PX_TO_PT(FOOTER_HEIGHT));
-	image.fillColor(Color(FOOTER_COLOR));
 	const string footer_info = format("Start: {}, Stop: {}, From {:.6f}MHz to {:.6f}MHz, {} Records, {} Steps, RBW: {:.1f}kHz, Generated on {}",
-		first_start_time, h.end_time, h.start_freq, h.stop_freq, record_count, h.steps, h.rbw, current_time);
-	image.annotate(footer_info, Magick::Geometry(0, 0, 0, 0), Magick::SouthEastGravity);
-	image.modifyImage();
+		headers.front().start_time, h.end_time, h.start_freq, h.stop_freq, record_count, h.steps, h.rbw, current_time);
+	draw_text(footer_info, FOOTER_HEIGHT, FOOTER_COLOR, Geometry(0, 0, 0, 0), Magick::SouthEastGravity, image);
 
 	// write the image to a file
 	print("[{}] Writing image to {} ({}x{})\n", current_time, output_name, width, height);
 	image.write(output_name);
+}
+catch(const std::exception &e)
+{
+	cerr << e.what() << endl;
+	return 1;
+}
 
 	return 0;
 }
