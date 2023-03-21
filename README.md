@@ -45,15 +45,16 @@ $ make
 
 ### Spectrum Log Format:
 
-```csv
-# <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+```
+# Optional comment
+$ <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 <dBm>
 <dBm>
 <dBm>
 ...
 <dBm>
 
-# <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+$ <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 <dBm>
 ...
 <dBm>

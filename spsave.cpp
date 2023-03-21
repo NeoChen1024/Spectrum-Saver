@@ -96,7 +96,7 @@ const string read_scanraw(
 	int x_count = 0;
 	// make data header
 	// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	output << format("# {:.06f},{:.06f},{},{:.03f},{},{}\n",
+	output << format("$ {:.06f},{:.06f},{},{:.03f},{},{}\n",
 		h.start_freq, h.stop_freq, h.steps, h.rbw, h.start_time, time_str());
 	// first '{' + 1 is x
 	for(unsigned int i = response.find_first_of('{') + 1; i < response.length(); i += 3)

@@ -59,12 +59,15 @@ bool parse_header(const string &line, logheader_t &h)
 {
 	char start_time_str[32];
 	char end_time_str[32];
-	if(line[0] != '#')
+	if(line[0] != '$')
 		return false;
 	
-	sscanf(line.c_str(), "# %lf,%lf,%zu,%f,%31[^,],%31[^,]", &h.start_freq, &h.stop_freq, &h.steps, &h.rbw, start_time_str, end_time_str);
+	int ret = sscanf(line.c_str(), "$ %lf,%lf,%zu,%f,%31[^,],%31[^,]", &h.start_freq, &h.stop_freq, &h.steps, &h.rbw, start_time_str, end_time_str);
 	h.start_time = start_time_str;
 	h.end_time = end_time_str;
+
+	if(ret != 6)
+		return false;
 
 	// sanity check
 	if(h.start_freq >= h.stop_freq)
@@ -116,6 +119,9 @@ void parse_logfile(
 
 	while(getline(logfile_stream, line))
 	{
+		if(line[0] == '#')
+			continue; // comment line
+
 		line_count++;
 
 		// parse header
@@ -373,12 +379,13 @@ try
 	const size_t height = record_count + BANNER_HEIGHT + FOOTER_HEIGHT;
 
 	Image image(Geometry(width, height), Color("black"));
+	image.verbose(true);
 	image.type(TrueColorType);
 	image.depth(8); // 8 bits per channel is enough for most usage
-	image.modifyImage();
 	image.textAntiAlias(true);
 	image.fontFamily(FONT_FAMILY);
 	image.comment(graph_title);
+	image.modifyImage();
 
 	// Write banner text
 	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
@@ -399,7 +406,8 @@ try
 	}
 
 	// write the image to a file
-	print("[{}] Writing image to {} ({}x{} @ {} colors)\n", current_time, output_name, width, height, image.totalColors());
+	print("[{}] Writing image: ", current_time);
+	// Enabled verbose
 	image.write(output_name);
 }
 catch(const StringException &e)
