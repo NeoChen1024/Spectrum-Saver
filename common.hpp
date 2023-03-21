@@ -16,7 +16,7 @@ using std::endl;
 using fmt::format;
 using fmt::print;
 
-typedef struct log_header
+typedef struct
 {
 	double start_freq;
 	double stop_freq;
@@ -24,7 +24,7 @@ typedef struct log_header
 	float rbw;
 	string start_time;
 	string end_time;
-} log_header_t;
+} logheader_t;
 
 class StringException : public std::exception
 {

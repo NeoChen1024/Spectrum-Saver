@@ -55,7 +55,7 @@ static const std::chrono::time_point<std::chrono::system_clock> time_from_str(co
 // # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 // formatted by:
 //	"# %.06f,%.06f,%ld,%.03f,%s,%s\n"
-bool parse_header(const string &line, log_header_t &h)
+bool parse_header(const string &line, logheader_t &h)
 {
 	char start_time_str[32];
 	char end_time_str[32];
@@ -89,12 +89,12 @@ bool parse_header(const string &line, log_header_t &h)
 // parse log file
 void parse_logfile(
 	vector<float> &power_data,
-	vector<log_header_t> &headers,
+	vector<logheader_t> &headers,
 	fstream &logfile_stream
 )
 {
-	log_header_t h; // current header
-	log_header_t first_header
+	logheader_t h; // current header
+	logheader_t first_header
 	{
 		.start_freq = 0,
 		.stop_freq = 0,
@@ -284,7 +284,7 @@ try
 	logfile_stream.open(logfile_name, std::ios::in);
 	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
 
-	vector<log_header_t> headers;
+	vector<logheader_t> headers;
 	vector<float> power_data;
 
 	// go through all headers to get record count & validate everything
@@ -333,7 +333,7 @@ try
 	print("[{}] Writing image to {} ({}x{})\n", current_time, output_name, width, height);
 	image.write(output_name);
 }
-catch(const std::exception &e)
+catch(const StringException &e)
 {
 	cerr << e.what() << endl;
 	return EXIT_FAILURE;

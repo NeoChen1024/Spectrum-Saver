@@ -78,7 +78,7 @@ const string read_response(int fd)
 
 // TODO: the argument list is becoming too long, consider using a struct
 const string read_scanraw(
-	int fd, int zero_level, log_header_t &h, fstream &output)
+	int fd, int zero_level, logheader_t &h, fstream &output)
 {
 	string response;
 	uint8_t c;
@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
 
 	string ttydev = "";
 	double step_freq_kHz = 10;
-	log_header_t h =
+	logheader_t h =
 	{
 		.start_freq = 1,
 		.stop_freq = 30,
