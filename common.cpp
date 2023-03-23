@@ -18,7 +18,7 @@
 
 const time_point<system_clock> now(void)
 {
-	return std::chrono::system_clock::now();
+	return system_clock::now();
 }
 
 const string time_str(void)
@@ -28,8 +28,7 @@ const string time_str(void)
 
 const time_point<system_clock> time_from_str(const string &str)
 {
-	using namespace std::chrono;
-	using namespace date;
+	using date::parse;
 
 	time_point<system_clock, seconds> time;
 	std::istringstream ss(str);
@@ -75,27 +74,28 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		const auto ts2 = time_from_str(headers.at(i + 1).start_time);
 		const auto te1 = time_from_str(headers.at(i).end_time);
 		const auto te2 = time_from_str(headers.at(i + 1).end_time);
-		const auto diff = duration_cast<seconds>(ts2 - ts1);
+		const auto tsdiff = duration_cast<seconds>(ts2 - ts1);
 
 		// check for time overlap
 		if(ts1 > ts2 || te1 > te2 || ts1 > te2 || te1 > ts2)
 		{
-			cerr << format("Warning: timestamp overlap between records #{} and #{}\n",
+			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
 				i + 1, i + 2);
 			problems_found = true;
 			inconsistency_count++;
 		}
 		
 		// check if time difference is constant
-		if(diff.count() != last_interval)
+		const auto diff = tsdiff.count();
+		if(diff != last_interval)
 		{
-			cerr << format("Warning: interval between records #{} and #{} changed from {}sec to {}sec\n",
-				i + 1, i + 2, last_interval, diff.count());
+			cerr << format("Warning: interval between record #{} and #{} changed from {}s to {}s\n",
+				i + 1, i + 2, last_interval, diff);
 			problems_found = true;
 			inconsistency_count++;
 		}
 
-		last_interval = diff.count();	
+		last_interval = diff;
 	}
 
 	if(inconsistency_count > 0)
