@@ -29,6 +29,7 @@
 #include <omp.h>
 #include <Magick++.h>
 #include <tinycolormap.hpp>
+#include <date/date.h>
 #include "common.hpp"
 #include "config.hpp"
 
@@ -42,13 +43,17 @@ using std::fstream;
 using namespace Magick;
 using MagickCore::Quantum;
 
-static const std::chrono::time_point<std::chrono::system_clock> time_from_str(const string &str)
+static const auto time_from_str(const string &str)
 {
+	using namespace std::chrono;
+	using namespace date;
+
+	time_point<system_clock, seconds> time;
 	std::istringstream ss(str);
-	std::tm tm;
-	ss >> std::get_time(&tm, "%Y%m%dT%H%M%S");
-	if_error(!ss.fail(), "Failed to parse time string");
-	return std::chrono::system_clock::from_time_t(std::mktime(&tm));
+	ss >> parse("%4Y%2m%2dT%2H%2M%2S", time);
+	if_error(ss.fail(), "Failed to parse time string");
+
+	return time;
 }
 
 // parse log record header line
@@ -181,6 +186,69 @@ void parse_logfile(
 	// check if size of power_data is correct
 	if(power_data.size() != headers.size() * first_header.steps)
 		if_error(true, "Error: power_data count is not correct");
+}
+
+// check for consistency of log file
+void check_logfile_time_consistency(const vector<logheader_t> &headers)
+{
+	using namespace std::chrono;
+	using namespace std::chrono_literals;
+
+	bool problems_found = false;
+	const auto record_count = headers.size();
+	const auto first_sweep_time = time_from_str(headers.front().start_time);
+	const auto last_sweep_time = time_from_str(headers.back().start_time);
+	const auto time_diff = duration_cast<seconds>(last_sweep_time - first_sweep_time);
+
+	// check if time difference (in seconds) is divisible by record count
+	// record_count - 1 == number of intervals
+	if(time_diff.count() % (record_count - 1) != 0)
+	{
+		//cerr << "Warning: time range in seconds is not divisible by record count" << endl;
+		cerr << format("Warning: time range in seconds ({}) is not divisible by record count ({})",
+			time_diff.count(), record_count) << endl;
+		problems_found = true;
+	}
+
+	const int interval = time_diff.count() / (record_count - 1);
+
+	// check if timing between records is constant
+	size_t inconsistency_count = 0;
+	for(size_t i = 0; i < record_count - 1; i++)
+	{
+		const auto t1 = time_from_str(headers.at(i).start_time);
+		const auto t2 = time_from_str(headers.at(i + 1).start_time);
+		const auto te1 = time_from_str(headers.at(i).end_time);
+		const auto diff = duration_cast<seconds>(t2 - t1);
+
+		// check for time overlap
+		if(te1 > t2)
+		{
+			cerr << format("Warning: time overlap between records #{} and #{}",
+				i + 1, i + 2) << endl; // records are 1-indexed for display
+			problems_found = true;
+		}
+		else
+			continue;
+		// check if time difference is constant
+		if(!(diff.count() != interval))
+			continue;
+	}
+	if(inconsistency_count > 0)
+	{
+		cerr << "Warning: time difference between " + to_string(inconsistency_count) + " records is not constant" << endl;
+		problems_found = true;
+	}
+
+	// check if interval is a factor of 60
+	if(60 % interval != 0)
+	{
+		cerr << "Warning: time interval " + to_string(interval) + "sec is not a factor of 60" << endl;
+		problems_found = true;
+	}
+
+	if(problems_found)
+		cerr << "Will not be able to align with exact mintues" << endl;
 }
 
 void draw_spectrogram(const size_t width, const size_t height, vector<float> &power_data, Image &image)
@@ -366,6 +434,8 @@ try
 	const auto &h = headers.back();
 
 	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
+
+	check_logfile_time_consistency(headers);
 
 /* ===================== *\
 || Image Processing Part ||
