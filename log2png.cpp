@@ -16,45 +16,13 @@
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <iostream>
-#include <iomanip>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <cassert>
-#include <cstddef>
-#include <cstdlib>
-#include <unistd.h>
-#include <limits.h>
-#include <omp.h>
-#include <Magick++.h>
-#include <tinycolormap.hpp>
-#include <date/date.h>
 #include "common.hpp"
 #include "config.hpp"
+#include <Magick++.h>
+#include <tinycolormap.hpp>
 
-using std::cout;
-using std::cerr;
-using std::endl;
-using std::string;
-using std::to_string;
-using std::vector;
-using std::fstream;
 using namespace Magick;
 using MagickCore::Quantum;
-
-static const auto time_from_str(const string &str)
-{
-	using namespace std::chrono;
-	using namespace date;
-
-	time_point<system_clock, seconds> time;
-	std::istringstream ss(str);
-	ss >> parse("%4Y%2m%2dT%2H%2M%2S", time);
-	if_error(ss.fail(), "Failed to parse time string");
-
-	return time;
-}
 
 // parse log record header line
 // # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
@@ -98,7 +66,7 @@ bool parse_header(const string &line, logheader_t &h)
 void parse_logfile(
 	vector<float> &power_data,
 	vector<logheader_t> &headers,
-	fstream &logfile_stream
+	istream &logfile_stream
 )
 {
 	logheader_t h; // current header
@@ -188,69 +156,6 @@ void parse_logfile(
 		if_error(true, "Error: power_data count is not correct");
 }
 
-// check for consistency of log file
-void check_logfile_time_consistency(const vector<logheader_t> &headers)
-{
-	using namespace std::chrono;
-	using namespace std::chrono_literals;
-
-	bool problems_found = false;
-	const auto record_count = headers.size();
-	const auto first_sweep_time = time_from_str(headers.front().start_time);
-	const auto last_sweep_time = time_from_str(headers.back().start_time);
-	const auto time_diff = duration_cast<seconds>(last_sweep_time - first_sweep_time);
-
-	// check if time difference (in seconds) is divisible by record count
-	// record_count - 1 == number of intervals
-	if(time_diff.count() % (record_count - 1) != 0)
-	{
-		//cerr << "Warning: time range in seconds is not divisible by record count" << endl;
-		cerr << format("Warning: time range in seconds ({}) is not divisible by record count ({})",
-			time_diff.count(), record_count) << endl;
-		problems_found = true;
-	}
-
-	const int interval = time_diff.count() / (record_count - 1);
-
-	// check if timing between records is constant
-	size_t inconsistency_count = 0;
-	for(size_t i = 0; i < record_count - 1; i++)
-	{
-		const auto t1 = time_from_str(headers.at(i).start_time);
-		const auto t2 = time_from_str(headers.at(i + 1).start_time);
-		const auto te1 = time_from_str(headers.at(i).end_time);
-		const auto diff = duration_cast<seconds>(t2 - t1);
-
-		// check for time overlap
-		if(te1 > t2)
-		{
-			cerr << format("Warning: time overlap between records #{} and #{}",
-				i + 1, i + 2) << endl; // records are 1-indexed for display
-			problems_found = true;
-		}
-		else
-			continue;
-		// check if time difference is constant
-		if(!(diff.count() != interval))
-			continue;
-	}
-	if(inconsistency_count > 0)
-	{
-		cerr << "Warning: time difference between " + to_string(inconsistency_count) + " records is not constant" << endl;
-		problems_found = true;
-	}
-
-	// check if interval is a factor of 60
-	if(60 % interval != 0)
-	{
-		cerr << "Warning: time interval " + to_string(interval) + "sec is not a factor of 60" << endl;
-		problems_found = true;
-	}
-
-	if(problems_found)
-		cerr << "Will not be able to align with exact mintues" << endl;
-}
-
 void draw_spectrogram(const size_t width, const size_t height, vector<float> &power_data, Image &image)
 {
 	Pixels view(image);
@@ -278,7 +183,7 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 	image.modifyImage();
 
 	const auto drawing_end_time = now();
-	const auto drawing_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
+	const auto drawing_duration = duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
 	assert(drawing_duration.count() > 0);
 	const size_t spectrogram_pixel_count = power_data.size();
 
@@ -419,23 +324,30 @@ try
 || Text Processing Part ||
 \* ==================== */
 
-	// open log file
-	logfile_stream.open(logfile_name, std::ios::in);
-	if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
-
 	vector<logheader_t> headers;
 	vector<float> power_data;
 
+	// open log file
 	// go through all headers to get record count & validate everything
-	parse_logfile(power_data, headers, logfile_stream);
+	if(logfile_name == "-")
+	{
+		parse_logfile(power_data, headers, cin);
+	}
+	else
+	{
+		logfile_stream.open(logfile_name, ios::in);
+		if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
+
+		parse_logfile(power_data, headers, logfile_stream);
+	}
+
+	check_logfile_time_consistency(headers);
 
 	const auto record_count = headers.size();
 	// get last header for easy access
 	const auto &h = headers.back();
 
 	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
-
-	check_logfile_time_consistency(headers);
 
 /* ===================== *\
 || Image Processing Part ||

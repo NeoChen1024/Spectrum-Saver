@@ -16,34 +16,10 @@
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <iostream>
-#include <sstream>
-#include <fstream>
-#include <string>
-#include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
-#include <cstddef>
-#include <cctype>
-#include <unistd.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <ctime>
-#include <chrono>
-#include <thread>
 #include "common.hpp"
 #include "config.hpp"
-
-using std::string;
-using std::cout;
-using std::cerr;
-using std::flush;
-using std::endl;
-using std::atof;
-using std::stringstream;
-using std::fstream;
-using std::to_string;
+#include <fcntl.h>
+#include <termios.h>
 
 int send_cmd(int fd, string cmd)
 {
