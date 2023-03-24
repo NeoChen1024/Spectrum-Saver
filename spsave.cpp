@@ -110,8 +110,6 @@ constexpr auto ceil(std::chrono::time_point<Clock, Duration1> t, Duration2 m) no
 
 auto awake_time(int interval)
 {
-	std::chrono::time_point<std::chrono::system_clock> next;
-	
 	return ceil(now(), std::chrono::seconds(interval));
 }
 

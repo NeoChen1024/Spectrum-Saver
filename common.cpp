@@ -38,7 +38,7 @@ const time_point<system_clock> time_from_str(const string &str)
 	return time;
 }
 
-// check for consistency of log file
+// check for time consistency of log file
 void check_logfile_time_consistency(const vector<logheader_t> &headers)
 {
 	bool problems_found = false;
@@ -81,6 +81,22 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
 				i + 1, i + 2);
+			problems_found = true;
+			inconsistency_count++;
+		}
+		// end time earlier than start time
+		if(te1 < ts1)
+		{
+			cerr << format("Warning: end time is earlier than start time in record #{}\n",
+				i + 1);
+			problems_found = true;
+			inconsistency_count++;
+		}
+		// check the last record
+		if(i == record_count - 2 && te2 < ts2)
+		{
+			cerr << format("Warning: end time is earlier than start time in record #{}\n",
+				i + 2);
 			problems_found = true;
 			inconsistency_count++;
 		}
