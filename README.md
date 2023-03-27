@@ -36,7 +36,7 @@ $ make
 	-i <interval>		sweep interval in seconds
 
 
- $ log2png -f <log file> [-p <filename prefix>] [-t <graph title>]
+ $ log2png -f <log file> [-p <filename prefix>] [-t <graph title>] [-g <grid?>]
 ```
 
 ### Example of rendered spectrogram:
@@ -63,3 +63,4 @@ $ <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 ### Credits:
 
 * [tinycolormap](https://github.com/yuki-koyama/tinycolormap "GitHub repo") for this awesome colormap library
+* [date](https://github.com/HowardHinnant/date) for better date/time parsing function (hopefully will be included in C++23)

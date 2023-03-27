@@ -38,6 +38,138 @@ const time_point<system_clock> time_from_str(const string &str)
 	return time;
 }
 
+// parse log record header line
+// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+// formatted by:
+//	"# %.06f,%.06f,%ld,%.03f,%s,%s\n"
+bool parse_header(const string &line, logheader_t &h)
+{
+	char start_time_str[32];
+	char end_time_str[32];
+	if(line[0] != '$')
+		return false;
+	
+	int ret = sscanf(line.c_str(), "$ %lf,%lf,%zu,%f,%31[^,],%31[^,]", &h.start_freq, &h.stop_freq, &h.steps, &h.rbw, start_time_str, end_time_str);
+	h.start_time = start_time_str;
+	h.end_time = end_time_str;
+
+	if(ret != 6)
+		return false;
+
+	// sanity check
+	if(h.start_freq >= h.stop_freq)
+	{
+		cerr << "Error: start_freq >= stop_freq" << endl;
+		return false;
+	}
+	if(h.steps == 0)
+	{
+		cerr << "Error: steps == 0" << endl;
+		return false;
+	}
+	if(h.rbw <= 0 || h.rbw > 1000)
+	{
+		cerr << "Error: rbw <= 0 || rbw > 1000" << endl;
+		return false;
+	}
+
+	return true;
+}
+
+// parse log file
+void parse_logfile(
+	vector<float> &power_data,
+	vector<logheader_t> &headers,
+	istream &logfile_stream
+)
+{
+	logheader_t h; // current header
+	logheader_t first_header
+	{
+		.start_freq = 0,
+		.stop_freq = 0,
+		.steps = 0,
+		.rbw = 0,
+		.start_time = "",
+		.end_time = ""
+	};
+
+	string line;
+	size_t line_count = 0;
+	size_t lines_per_record = SIZE_MAX;
+
+	// types of lines:
+	// 	record header: # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
+	// 	data: <dbm>\n<dbm>\n<dbm>\n...
+	// 	trailing newline of a record: \n
+	// any other line is invalid
+
+	while(getline(logfile_stream, line))
+	{
+		if(line[0] == '#')
+			continue; // comment line
+
+		line_count++;
+
+		// parse header
+		if(line_count % lines_per_record == 1)
+		{
+			bool ret = parse_header(line, h);
+			if_error(!ret, format("Error: invalid header at line #{}", line_count));
+
+			if(first_header.steps == 0)
+			{
+				lines_per_record = h.steps + 2; // +1 for header, +1 for trailing newline
+				first_header = h;
+			}
+			else
+			{
+				if_error(h.start_freq != first_header.start_freq,
+					format("Error: start_freq mismatch at line #{}: {} != {}",
+						line_count, h.start_freq, first_header.start_freq));
+				if_error(h.stop_freq != first_header.stop_freq,
+					format("Error: stop_freq mismatch at line #{}: {} != {}",
+						line_count, h.stop_freq, first_header.stop_freq));
+				if_error(h.steps != first_header.steps,
+					format("Error: steps count mismatch at line #{}: {} != {}",
+						line_count, h.steps, first_header.steps));
+				if_error(h.rbw != first_header.rbw,
+					format("Error: rbw mismatch at line #{}: {} != {}",
+						line_count, h.rbw, first_header.rbw));
+			}
+
+			headers.emplace_back(h);
+			continue;
+		}
+		else if(line_count % lines_per_record == 0)
+		{
+			// trailing newline of a record
+			if_error(!line.empty(), format("Error: newline expected at line #{}", line_count));
+			continue;
+		}
+		else
+		{
+			// data line
+			try
+			{
+				power_data.emplace_back(std::stod(line));
+			}
+			catch(const std::exception& e)
+			{
+				cerr << format("std::stod exception: {}\n", e.what());
+				cerr << format("Error: failed to parse double from line {}: \"{}\"\n", line_count, line);
+			}
+			continue;
+		}
+	}
+
+	if_error(headers.size() == 0, "Error: no valid record found in log file");
+
+	// check if size of power_data is correct
+	if(power_data.size() != headers.size() * first_header.steps)
+		if_error(true, "Error: power_data count is not correct");
+}
+
 // check for time consistency of log file
 void check_logfile_time_consistency(const vector<logheader_t> &headers)
 {
@@ -107,6 +239,13 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: interval between record #{} and #{} changed from {}s to {}s\n",
 				i + 1, i + 2, last_interval, diff);
+			problems_found = true;
+			inconsistency_count++;
+		}
+		if(diff < 0)
+		{
+			cerr << format("Warning: negative interval between record #{} and #{}\n",
+				i + 1, i + 2);
 			problems_found = true;
 			inconsistency_count++;
 		}

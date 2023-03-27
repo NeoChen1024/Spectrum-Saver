@@ -51,6 +51,16 @@ typedef struct
 	string end_time;
 } logheader_t;
 
+// log problems
+typedef struct
+{
+	bool variant_interval;
+	bool time_range_not_divisible_by_record_count;
+	bool interval_not_divisible_by_60;
+	bool negative_interval;
+	bool time_overlap;
+} logproblem_t;
+
 class StringException : public std::exception
 {
 public:
@@ -72,4 +82,10 @@ static void inline if_error(bool condition, const string &message)
 const time_point<system_clock> now(void);
 const string time_str(void);
 const time_point<system_clock> time_from_str(const string &str);
+bool parse_header(const string &line, logheader_t &h);
+void parse_logfile(
+	vector<float> &power_data,
+	vector<logheader_t> &headers,
+	istream &logfile_stream
+);
 void check_logfile_time_consistency(const vector<logheader_t> &headers);
