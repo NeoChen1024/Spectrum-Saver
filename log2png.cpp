@@ -203,6 +203,7 @@ try
 	if(logfile_name == "-")
 	{
 		parse_logfile(power_data, headers, cin);
+		logfile_name = "stdin";
 	}
 	else
 	{
