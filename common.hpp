@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 #include <chrono>
 #include <unistd.h>
 #include <limits.h>
@@ -33,6 +34,7 @@ using std::fstream;
 using std::istream;
 using std::ostream;
 using std::to_string;
+using std::isfinite;
 using std::chrono::system_clock;
 using std::chrono::time_point;
 using std::chrono::seconds;

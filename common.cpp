@@ -149,16 +149,20 @@ void parse_logfile(
 		}
 		else
 		{
+			float power = 0;
 			// data line
 			try
 			{
-				power_data.emplace_back(std::stod(line));
+				power = std::stof(line);
 			}
 			catch(const std::exception& e)
 			{
 				cerr << format("std::stod exception: {}\n", e.what());
-				cerr << format("Error: failed to parse double from line {}: \"{}\"\n", line_count, line);
+				if_error(true, format("Error: failed to parse double from line {}: \"{}\"", line_count, line));
 			}
+			if(!isfinite(power))
+				if_error(true, format("Error: invalid power value at line #{}", line_count));
+			power_data.emplace_back(power);
 			continue;
 		}
 	}
