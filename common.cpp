@@ -95,7 +95,8 @@ void parse_logfile(
 	};
 
 	string line;
-	size_t line_count = 0;
+	size_t in_record_line_count = 0;
+	size_t real_line_count = 0;
 	size_t lines_per_record = SIZE_MAX;
 
 	// types of lines:
@@ -106,16 +107,17 @@ void parse_logfile(
 
 	while(getline(logfile_stream, line))
 	{
+		real_line_count++;
 		if(line[0] == '#')
 			continue; // comment line
 
-		line_count++;
+		in_record_line_count++;
 
 		// parse header
-		if(line_count % lines_per_record == 1)
+		if(in_record_line_count % lines_per_record == 1)
 		{
 			bool ret = parse_header(line, h);
-			if_error(!ret, format("Error: invalid header at line #{}", line_count));
+			if_error(!ret, format("Error: invalid header at line #{}", real_line_count));
 
 			if(first_header.steps == 0)
 			{
@@ -126,26 +128,25 @@ void parse_logfile(
 			{
 				if_error(h.start_freq != first_header.start_freq,
 					format("Error: start_freq mismatch at line #{}: {} != {}",
-						line_count, h.start_freq, first_header.start_freq));
+						real_line_count, h.start_freq, first_header.start_freq));
 				if_error(h.stop_freq != first_header.stop_freq,
 					format("Error: stop_freq mismatch at line #{}: {} != {}",
-						line_count, h.stop_freq, first_header.stop_freq));
+						real_line_count, h.stop_freq, first_header.stop_freq));
 				if_error(h.steps != first_header.steps,
 					format("Error: steps count mismatch at line #{}: {} != {}",
-						line_count, h.steps, first_header.steps));
+						real_line_count, h.steps, first_header.steps));
 				if_error(h.rbw != first_header.rbw,
 					format("Error: rbw mismatch at line #{}: {} != {}",
-						line_count, h.rbw, first_header.rbw));
+						real_line_count, h.rbw, first_header.rbw));
 			}
 
 			headers.emplace_back(h);
-			continue;
 		}
-		else if(line_count % lines_per_record == 0)
+		else if(in_record_line_count % lines_per_record == 0)
 		{
 			// trailing newline of a record
-			if_error(!line.empty(), format("Error: newline expected at line #{}", line_count));
-			continue;
+			if_error(!line.empty(), format("Error: newline expected at line #{}", real_line_count));
+			in_record_line_count = 0;
 		}
 		else
 		{
@@ -158,12 +159,11 @@ void parse_logfile(
 			catch(const std::exception& e)
 			{
 				cerr << format("std::stod exception: {}\n", e.what());
-				if_error(true, format("Error: failed to parse double from line {}: \"{}\"", line_count, line));
+				if_error(true, format("Error: failed to parse double from line {}: \"{}\"", real_line_count, line));
 			}
 			if(!isfinite(power))
-				if_error(true, format("Error: invalid power value at line #{}", line_count));
+				if_error(true, format("Error: invalid power value at line #{}", real_line_count));
 			power_data.emplace_back(power);
-			continue;
 		}
 	}
 
@@ -207,13 +207,13 @@ bool check_logfile_time_consistency(const vector<logheader_t> &headers, logprobl
 	for(size_t i = 0; i < record_count - 1; i++)
 	{
 		const auto ts1 = time_from_str(headers.at(i).start_time);
-		const auto ts2 = time_from_str(headers.at(i + 1).start_time);
 		const auto te1 = time_from_str(headers.at(i).end_time);
+		const auto ts2 = time_from_str(headers.at(i + 1).start_time);
 		const auto te2 = time_from_str(headers.at(i + 1).end_time);
 		const auto tsdiff = duration_cast<seconds>(ts2 - ts1);
 
 		// check for time overlap
-		if(ts1 > ts2 || te1 > te2 || ts1 > te2 || te1 > ts2)
+		if(! (ts1 <= te1 && te1 <= ts2 && ts2 <= te2))
 		{
 			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
 				i + 1, i + 2);
