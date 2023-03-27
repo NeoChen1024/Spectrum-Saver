@@ -213,7 +213,7 @@ bool check_logfile_time_consistency(const vector<logheader_t> &headers, logprobl
 		const auto tsdiff = duration_cast<seconds>(ts2 - ts1);
 
 		// check for time overlap
-		if(! (ts1 <= te1 && te1 <= ts2 && ts2 <= te2))
+		if(! (ts1 <= te1 && te1 <= ts2 && ts2 <= te2 && ts1 < ts2))
 		{
 			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
 				i + 1, i + 2);
@@ -236,7 +236,7 @@ bool check_logfile_time_consistency(const vector<logheader_t> &headers, logprobl
 			problems.time_overlap = true;
 			inconsistency_count++;
 		}
-		
+	
 		// check if time difference is constant
 		const auto diff = tsdiff.count();
 		if(diff != last_interval)
