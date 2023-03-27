@@ -88,4 +88,4 @@ void parse_logfile(
 	vector<logheader_t> &headers,
 	istream &logfile_stream
 );
-void check_logfile_time_consistency(const vector<logheader_t> &headers);
+bool check_logfile_time_consistency(const vector<logheader_t> &headers, logproblem_t &problems);

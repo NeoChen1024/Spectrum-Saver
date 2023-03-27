@@ -171,10 +171,9 @@ void parse_logfile(
 }
 
 // check for time consistency of log file
-void check_logfile_time_consistency(const vector<logheader_t> &headers)
+bool check_logfile_time_consistency(const vector<logheader_t> &headers, logproblem_t &problems)
 {
-	bool problems_found = false;
-
+	size_t inconsistency_count = 0;
 	const auto record_count = headers.size();
 	const auto first_sweep_time = time_from_str(headers.front().start_time);
 	const auto last_sweep_time = time_from_str(headers.back().start_time);
@@ -187,18 +186,19 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 	{
 		cerr << format("Warning: time range in seconds ({}) is not divisible by record count ({})\n",
 			time_diff.count(), record_count);
-		problems_found = true;
+		problems.time_range_not_divisible_by_record_count = true;
+		inconsistency_count++;
 	}
 
 	// check if interval is a factor of 60
 	if(60 % interval != 0)
 	{
 		cerr << format("Warning: time interval {}sec is not a factor of 60\n", interval);
-		problems_found = true;
+		problems.interval_not_divisible_by_60 = true;
+		inconsistency_count++;
 	}
 
 	// check timing
-	size_t inconsistency_count = 0;
 	ssize_t last_interval = interval; // for checking if interval is constant
 	for(size_t i = 0; i < record_count - 1; i++)
 	{
@@ -213,7 +213,7 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
 				i + 1, i + 2);
-			problems_found = true;
+			problems.time_overlap = true;
 			inconsistency_count++;
 		}
 		// end time earlier than start time
@@ -221,7 +221,7 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: end time is earlier than start time in record #{}\n",
 				i + 1);
-			problems_found = true;
+			problems.time_overlap = true;
 			inconsistency_count++;
 		}
 		// check the last record
@@ -229,7 +229,7 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: end time is earlier than start time in record #{}\n",
 				i + 2);
-			problems_found = true;
+			problems.time_overlap = true;
 			inconsistency_count++;
 		}
 		
@@ -239,14 +239,14 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 		{
 			cerr << format("Warning: interval between record #{} and #{} changed from {}s to {}s\n",
 				i + 1, i + 2, last_interval, diff);
-			problems_found = true;
+			problems.variant_interval = true;
 			inconsistency_count++;
 		}
 		if(diff < 0)
 		{
 			cerr << format("Warning: negative interval between record #{} and #{}\n",
 				i + 1, i + 2);
-			problems_found = true;
+			problems.negative_interval = true;
 			inconsistency_count++;
 		}
 
@@ -255,11 +255,10 @@ void check_logfile_time_consistency(const vector<logheader_t> &headers)
 
 	if(inconsistency_count > 0)
 	{
-		cerr << format("Warning: {} inconsistency(s) found\n",
+		cerr << format("{} inconsistency(s) found, may not be able perform operations involving time correctly.\n",
 			inconsistency_count);
-		problems_found = true;
 	}
 
-	if(problems_found)
-		cerr << "Warning: Problems found, may not be able perform operations involving time correctly.\n";
+
+	return inconsistency_count > 0;
 }

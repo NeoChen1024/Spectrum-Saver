@@ -210,7 +210,8 @@ try
 		parse_logfile(power_data, headers, logfile_stream);
 	}
 
-	check_logfile_time_consistency(headers);
+	logproblem_t problems = { false };
+	check_logfile_time_consistency(headers, problems);
 
 	const auto record_count = headers.size();
 	// get last header for easy access
