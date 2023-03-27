@@ -24,14 +24,17 @@
 using namespace Magick;
 using MagickCore::Quantum;
 
-
-void draw_spectrogram(const size_t width, const size_t height, vector<float> &power_data, Image &image)
+void draw_spectrogram(
+	const size_t sp_width,
+	const size_t sp_height,
+	const size_t sp_xoffset,
+	const size_t sp_yoffset,
+	vector<float> &power_data,
+	Image &image
+)
 {
-	Pixels view(image);
-	Quantum *pixels = view.get(0, 0, width, height);
-	const uint8_t channels = image.channels();
-
-	pixels += width * channels * (BANNER_HEIGHT); // skip banner
+	Quantum *pixels = image.getPixels(sp_xoffset, sp_yoffset, sp_width, sp_height);
+	const int channels = image.channels();
 
 	// Measure speed
 	auto drawing_start_time = now();
@@ -44,12 +47,11 @@ void draw_spectrogram(const size_t width, const size_t height, vector<float> &po
 		const auto mappedcolor = tinycolormap::GetColor(value, tinycolormap::ColormapType::Cubehelix);
 
 		// Raw pixel access is faster than directly using pixelColor()
-		pixels[i * channels + 0] = mappedcolor.r() * QuantumRange;
-		pixels[i * channels + 1] = mappedcolor.g() * QuantumRange;
-		pixels[i * channels + 2] = mappedcolor.b() * QuantumRange;
+		pixels[i * channels + 0] = QuantumRange * mappedcolor.r();
+		pixels[i * channels + 1] = QuantumRange * mappedcolor.g();
+		pixels[i * channels + 2] = QuantumRange * mappedcolor.b();
 	}
-	view.sync();
-	image.modifyImage();
+	image.syncPixels();
 
 	const auto drawing_end_time = now();
 	const auto drawing_duration = duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
@@ -210,7 +212,7 @@ try
 		parse_logfile(power_data, headers, logfile_stream);
 	}
 
-	logproblem_t problems = { false };
+	logproblem_t problems = {};
 	check_logfile_time_consistency(headers, problems);
 
 	const auto record_count = headers.size();
@@ -228,6 +230,11 @@ try
 
 	// create the image
 
+	const size_t sp_width = h.steps;
+	const size_t sp_height = record_count;
+	const size_t sp_xoffset = 0;	// Currently unused
+	const size_t sp_yoffset = BANNER_HEIGHT;
+
 	const size_t width = h.steps;
 	const size_t height = record_count + BANNER_HEIGHT + FOOTER_HEIGHT;
 
@@ -243,7 +250,7 @@ try
 	// Write banner text
 	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
 
-	draw_spectrogram(width, height, power_data, image);
+	draw_spectrogram(sp_width, sp_height, sp_xoffset, sp_yoffset, power_data, image);
 
 	const string current_time = time_str();
 
