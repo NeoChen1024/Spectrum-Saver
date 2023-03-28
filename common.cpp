@@ -112,6 +112,8 @@ void parse_logfile(
 	// 	trailing newline of a record: \n
 	// any other line is invalid
 
+	if_error(logfile_stream.bad(), "Error: invalid logfile stream");
+
 	while(getline(logfile_stream, line))
 	{
 		real_line_count++;
