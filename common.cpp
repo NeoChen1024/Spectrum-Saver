@@ -94,11 +94,18 @@ void parse_logfile(
 		.end_time = ""
 	};
 
+	// for appending to vector<> headers
+	if(!headers.empty())
+	{
+		first_header = headers.front();
+	}
+
 	string line;
 	size_t in_record_line_count = 0;
 	size_t real_line_count = 0;
 	size_t lines_per_record = SIZE_MAX;
 
+	if_error(!logfile_stream.good(), "Error: invalid logfile stream");
 	// types of lines:
 	// 	record header: # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 	// 	data: <dbm>\n<dbm>\n<dbm>\n...
