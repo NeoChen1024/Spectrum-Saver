@@ -124,6 +124,7 @@ void help_msg(char *argv[])
 		"\t-r <RBW in kHz>\t	default: 10, consult tinySA.org for supported RBW values\n"
 		"\t-p <filename prefix>	default \"sp\"\n"
 		"\t-l <loop?>		0 is false (default), any other value is true\n"
+		"\t-x <max records>	default: 1440, 0 means no log rotation\n"
 		"\t-i <interval>\t	sweep interval in seconds (default: 60)" << endl << endl;
 }
 
