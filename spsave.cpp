@@ -156,10 +156,11 @@ int main(int argc, char *argv[])
 	bool loop = 0; // whether to run in a loop or not
 	int interval = 60; // interval in seconds
 	string model = "tinySA4"; // tinySA or tinySA4 (Ultra)
+	size_t max_records = 1440; // 1 day of 1-minute records
 
 	// Parse arguments
 	int opt;
-	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:i:m:h")) != -1)
+	while((opt = getopt(argc, argv, "t:s:e:k:r:p:l:i:m:x:h")) != -1)
 	{
 		switch(opt)
 		{
@@ -196,6 +197,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'm':
 				model = optarg;
+				break;
+			case 'x':
+				max_records = atoll(optarg);
 				break;
 			case 'h':
 				help_msg(argv);
@@ -291,7 +295,7 @@ int main(int argc, char *argv[])
 			record_count++;
 
 			// rotate file
-			if(record_count >= MAX_RECORDS)
+			if(max_records != 0 && record_count >= max_records)
 			{
 				record_count = 0;
 				// old log file will be closed in new_logfile()

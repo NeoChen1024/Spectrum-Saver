@@ -77,7 +77,8 @@ bool parse_header(const string &line, logheader_t &h)
 }
 
 // parse log file
-void parse_logfile(
+void parse_logfile
+(
 	vector<float> &power_data,
 	vector<logheader_t> &headers,
 	istream &logfile_stream

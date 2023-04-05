@@ -2,9 +2,6 @@
 
 /* options used by spsave: */
 
-// 1440 records would be 24 hours at 1 minute interval
-#define MAX_RECORDS	1440 
-
 // tinySA Zero Level, 128 for tinySA, 174 for tinySA Ultra
 constexpr static int ZERO_LEVEL =	128;
 constexpr static int ZERO_LEVEL_ULTRA =	174;
