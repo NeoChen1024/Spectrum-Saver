@@ -10,13 +10,13 @@ constexpr static int ZERO_LEVEL_ULTRA =	174;
 
 // Font for info text
 // Too long, can't be constexpr
-constexpr static string FONT_FAMILY{"Iosevka Term"};
+const static string FONT_FAMILY{"Iosevka Term"};
 
 // Height of banner and footer in pixels
-constexpr static int BANNER_HEIGHT{64};
-constexpr static int FOOTER_HEIGHT{24};
-constexpr static string BANNER_COLOR{"white"};
-constexpr static string FOOTER_COLOR{"yellow"};
+constexpr static int BANNER_HEIGHT = 64;
+constexpr static int FOOTER_HEIGHT = 24;
+const static string BANNER_COLOR{"white"};
+const static string FOOTER_COLOR{"yellow"};
 
 #define PX_TO_PT(x)	((double)(x) * 72 / 96)
 
