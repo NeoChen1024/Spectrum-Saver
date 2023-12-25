@@ -7,7 +7,7 @@ FMT_LIB = -lfmt
 FLAGS	= $(OPT) -I./include -g3 -pedantic -Wall -Wextra $(IMAGEMAGICK_FLAGS)
 LIBS	= $(IMAGEMAGICK_LIBS) $(FMT_LIB)
 #DBG	= -fsanitize=undefined,integer,nullability -fno-omit-frame-pointer
-CXXFLAGS = $(FLAGS) $(DBG) -std=c++20
+CXXFLAGS = $(FLAGS) $(DBG) -std=c++17
 OBJS	= spsave.o log2png.o common.o
 PRGS	= spsave log2png
 

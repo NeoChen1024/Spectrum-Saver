@@ -87,12 +87,12 @@ void parse_logfile
 	logheader_t h; // current header
 	logheader_t first_header
 	{
-		.start_freq = 0,
-		.stop_freq = 0,
-		.steps = 0,
-		.rbw = 0,
-		.start_time = "",
-		.end_time = ""
+		/* start freq */ 0,
+		/* stop freq */ 0,
+		/* steps */ 0,
+		/* rbw */ 0,
+		/* start_time */ "",
+		/* end_time */ ""
 	};
 
 	// for appending to vector<> headers

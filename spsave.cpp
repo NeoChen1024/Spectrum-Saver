@@ -146,12 +146,12 @@ int main(int argc, char *argv[])
 	double step_freq_kHz = 10;
 	logheader_t h =
 	{
-		.start_freq = 1,
-		.stop_freq = 30,
-		.steps = 2901,
-		.rbw = 10,
-		.start_time = "",
-		.end_time = ""
+		/* start freq */ 1,
+		/* stop freq */ 30,
+		/* steps */ 2901,
+		/* rbw */ 10,
+		/* start time */ "",
+		/* end time */ ""
 	};
 	string filename_prefix = "sp";
 	bool loop = 0; // whether to run in a loop or not
