@@ -14,7 +14,6 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
 
 - A C++20 compiler and standard library with `std::format` and C++20 chrono
   parsing support
-- CMake, used to build the bundled Google CRC32C library
 - [ImageMagick](https://imagemagick.org/) with Magick++ development files
 - OpenMP
 - [Google CRC32C](https://github.com/google/crc32c), included as a Git submodule
