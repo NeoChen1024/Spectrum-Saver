@@ -10,6 +10,7 @@
 
 #include "common.hpp"
 #include "config.hpp"
+#include "log_io.hpp"
 
 #include <Magick++.h>
 #include <tinycolormap.hpp>
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <getopt.h>
 #include <limits>
 #include <span>
 #include <string>
@@ -199,20 +201,27 @@ struct Options
 	std::string logfile_name;
 	std::string filename_prefix{"sp"};
 	std::string graph_title{"Unnamed Spectrogram"};
+	LogFormat input_format{LogFormat::automatic};
 	bool draw_gridlines{true};
 };
 
 [[nodiscard]] Options parse_arguments(const int argc, char *argv[])
 {
 	Options options;
+	const option long_options[]{
+		{"input-format", required_argument, nullptr, 'F'},
+		{"help", no_argument, nullptr, 'h'},
+		{nullptr, 0, nullptr, 0}
+	};
 	int argument;
-	while((argument = ::getopt(argc, argv, "f:p:t:g:h")) != -1)
+	while((argument = ::getopt_long(argc, argv, "f:p:t:g:F:h", long_options, nullptr)) != -1)
 	{
 		switch(argument)
 		{
 			case 'f': options.logfile_name = optarg; break;
 			case 'p': options.filename_prefix = optarg; break;
 			case 't': options.graph_title = optarg; break;
+			case 'F': options.input_format = parse_log_format(optarg, true); break;
 			case 'g':
 				if(std::string_view{optarg} == "true")
 					options.draw_gridlines = true;
@@ -224,7 +233,7 @@ struct Options
 			case 'h':
 				std::cout << "Usage: " << argv[0]
 					<< " -f <log file> [-p <filename prefix>] [-t <graph title>] "
-						"[-g <grid? true/false>]\n";
+						"[-g <grid? true/false>] [--input-format auto|text|binary]\n";
 				std::exit(EXIT_SUCCESS);
 			default:
 				throw std::runtime_error("Invalid command-line arguments");
@@ -243,27 +252,38 @@ try
 
 	std::vector<LogHeader> headers;
 	std::vector<float> power_data;
+	const auto read_start_time = now();
 	std::string display_logfile_name = options.logfile_name;
 	std::fstream logfile_stream;
+	LogReadResult read_result;
 	if(options.logfile_name == "-")
 	{
-		parse_logfile(power_data, headers, std::cin);
+		read_result = read_logfile(std::cin, options.input_format, power_data, headers);
 		display_logfile_name = "stdin";
 	}
 	else
 	{
-		logfile_stream.open(options.logfile_name, std::ios::in);
+		logfile_stream.open(options.logfile_name, std::ios::in | std::ios::binary);
 		throw_if(!logfile_stream.is_open(),
 			std::format("Error: could not open file {}", options.logfile_name));
-		parse_logfile(power_data, headers, logfile_stream);
+		read_result = read_logfile(logfile_stream, options.input_format, power_data, headers);
 	}
+	if(read_result.truncated_tail)
+		std::cerr << "Warning: ignored an incomplete final binary record\n";
+	const auto read_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		now() - read_start_time);
+	throw_if(read_duration.count() <= 0, "Invalid log reading duration");
+	print("Read and decoded {} samples in {:.3f} seconds ({:.3f} Msamples/s)\n",
+		power_data.size(), static_cast<double>(read_duration.count()) / 1e9,
+		static_cast<double>(power_data.size()) * 1e3
+			/ static_cast<double>(read_duration.count()));
 
 	LogProblems problems;
 	(void)check_logfile_time_consistency(headers, problems);
 	const auto record_count = headers.size();
 	const auto &header = headers.back();
-	print("{} has {} records, {} points each\n",
-		display_logfile_name, record_count, header.steps);
+	print("{} is a {} log with {} records, {} points each\n",
+		display_logfile_name, log_format_name(read_result.format), record_count, header.steps);
 
 	const auto output_name = std::format(
 		"{}.{}.png", options.filename_prefix, header.end_time);

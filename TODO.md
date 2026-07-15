@@ -1,91 +1,58 @@
 # TODO
 
 The C++20 migration, correctness fixes, ImageMagick pixel-view cleanup, and
-baseline parser/protocol tests are handled by the first modernization change
-set. The following work is intentionally deferred for a separate review.
+baseline parser/protocol tests were handled by the first modernization change
+set. The binary-format change set has now added the version 1.0 codec, Google
+CRC32C, text/binary reader and writer abstractions, a bounded asynchronous
+acquisition writer, format auto-detection, and `splogconvert`.
 
-## 1. Log reader and writer abstraction
+The following work remains after the core implementation.
 
-- Introduce `LogReader` and `LogWriter` interfaces so acquisition, validation,
-  and rendering do not depend on a specific on-disk representation.
-- Move the current text implementation behind `TextLogReader` and
-  `TextLogWriter` without changing the existing text format.
-- Keep strict `std::from_chars` parsing and precise line/record diagnostics.
-- Decide whether readers stream records or expose a complete in-memory data
-  set. Rendering currently requires the complete image, but validation and
-  conversion should remain streamable.
-- Add format auto-detection without guessing from filename extensions.
-- Preserve indefinite support for existing text logs.
+## 1. Streaming and recovery readers
 
-## 2. Versioned binary log format
+- Change validation and conversion to consume one record at a time. The current
+  `LogReader` interface still accumulates the complete renderer data set.
+- Add an explicit damaged-record recovery mode that scans for the next record
+  marker and validates candidate length, invariants, and CRC32C. Normal reading
+  already retains complete records before a truncated final record.
+- Add sequence-gap diagnostics to recovery mode instead of treating every gap
+  as fatal.
+- Preserve indefinite support for existing text logs and their strict
+  `std::from_chars` diagnostics.
 
-The format must be specified before implementation. Do not serialize native
-C++ structs or rely on host padding, alignment, floating-point layout, or
-endianness.
+## 2. Binary format follow-up
 
-### File header
+Version 1.0 is specified in
+[`docs/binary-log-format.md`](docs/binary-log-format.md). It defines the exact
+file and record byte layouts, integer affine calibration, metadata TLVs,
+mandatory record CRC32C, interrupted-tail handling, and recovery behavior.
 
-- Fixed magic value.
-- Major and minor format versions.
-- Explicit little-endian integer encoding.
-- Header byte length and feature flags for forward-compatible extensions.
-- Start and stop frequency as fixed-width integer Hz values.
-- Resolution bandwidth as a fixed-width integer Hz value.
-- Points per sweep.
-- Sample encoding identifier.
-- Calibration scale and offset metadata.
-- Optional device/model and creation metadata in length-delimited fields.
+- Decide whether later minor versions need additional metadata types before
+  assigning more identifiers.
+- Consider avoiding the temporary encoded payload buffer on little-endian
+  hosts after measuring whether it matters.
 
-### Record framing
+## 3. Asynchronous acquisition follow-up
 
-- Synchronization marker suitable for locating the next record after damage.
-- Total record byte length.
-- Monotonic sequence number.
-- Start and end timestamps as fixed-width Unix timestamps with a specified
-  epoch and precision.
-- Sample count, which must agree with both payload size and file metadata.
-- Payload encoding identifier when per-record overrides are allowed.
-- Optional CRC32C covering the record header and payload.
-- Defined handling for a truncated final record so interrupted acquisition can
-  retain all previously completed records.
+- Expose the current 16-record queue limit as a CLI setting if field testing
+  shows a need to tune it.
+- Report queue high-water marks and sustained backpressure to the user.
+- Decide whether a configurable `fdatasync` interval is needed; ordinary stream
+  flush is not a power-loss durability guarantee.
+- Consider parsing `scanraw` directly from chunked serial reads into the owned
+  sample vector, avoiding the current intermediate response buffer and
+  one-byte `read()` calls.
 
-### Initial sample encoding
+## 4. CLI and compatibility
 
-- Prefer the original tinySA unsigned 16-bit samples in little-endian order.
-- Store the conversion `power_dbm = raw * scale + offset` in file metadata;
-  tinySA currently uses a scale of `1/32` and a model-dependent zero-level
-  offset.
-- Preserve the full device resolution instead of the text writer's current
-  one-decimal-place rounding.
-- Reserve encoding identifiers for calibrated IEEE-754 binary32 samples and
-  future devices.
+- Reconsider whether binary should become the acquisition default after a
+  compatibility period. Text is currently still the default.
 
-### Compression
+## 5. Validation and tests
 
-- Measure uncompressed binary, whole-file compression, and independently
-  compressed record blocks.
-- Keep the base format readable without requiring compression.
-- If compression is added, specify the codec and uncompressed length in a
-  versioned, length-delimited container rather than inferring it externally.
-
-### CLI and compatibility
-
-- Add `spsave --format text|binary` only after the binary format is stable.
-- Add `log2png --input-format auto|text|binary`.
-- Decide whether text or binary remains the acquisition default during the
-  compatibility period.
-- Provide a text-to-binary conversion path and retain binary-to-text export for
-  inspection and interoperability.
-
-### Validation and tests
-
-- Golden byte-level fixtures independent of the writer implementation.
-- Text/binary round trips that produce identical calibrated samples.
 - Cross-endian decoding tests.
-- Unknown version, flags, encoding, and extension-field tests.
-- Invalid lengths, count mismatches, integer overflow, CRC failure, and damaged
-  synchronization-marker tests.
-- Truncated-tail recovery tests.
-- Render comparisons between equivalent text and binary inputs.
-- Benchmarks for parsing throughput, peak memory, output size, and optional
-  compression ratio using the repository example log.
+- More unknown version, encoding, critical-extension, invalid-length, count
+  mismatch, integer-overflow, and false synchronization-marker tests.
+- Damaged middle-record recovery tests after recovery mode is implemented.
+- Benchmarks for parsing throughput, peak memory, output size, and queue
+  behavior using the repository example log.

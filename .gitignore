@@ -1,11 +1,12 @@
 .vscode/
-*.o
 temp/
 sp/
 spsave
 log2png
+splogconvert
 *.o
 *.d
+.build/
 *.a
 *.out
 *.log

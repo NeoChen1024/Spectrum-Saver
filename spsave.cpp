@@ -10,16 +10,19 @@
 
 #include "common.hpp"
 #include "config.hpp"
+#include "log_io.hpp"
 #include "serial_protocol.hpp"
 
 #include <cerrno>
 #include <charconv>
+#include <csignal>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
-#include <fstream>
+#include <getopt.h>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -28,11 +31,18 @@
 #include <thread>
 #include <type_traits>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace
 {
 constexpr std::string_view DEVICE_PROMPT{"ch> "};
+volatile std::sig_atomic_t stop_requested = 0;
+
+extern "C" void request_stop(const int) noexcept
+{
+	stop_requested = 1;
+}
 
 class FileDescriptor
 {
@@ -141,28 +151,23 @@ void send_command(const int descriptor, const std::string_view command)
 	return response;
 }
 
-void read_scanraw(
+[[nodiscard]] SweepRecord read_scanraw(
 	const int descriptor,
-	const int zero_level,
-	const LogHeader &header,
-	std::fstream &output
+	const std::size_t expected_points,
+	const std::chrono::sys_time<std::chrono::nanoseconds> start_time
 )
 {
-	std::cout << std::format("[{}] Reading... ", time_str()) << std::flush;
-	throw_if(header.steps > (std::numeric_limits<std::size_t>::max() - 4096) / 3,
+	throw_if(expected_points > (std::numeric_limits<std::size_t>::max() - 4096) / 3,
 		"Requested scan is too large");
-	const auto response = read_until_prompt(descriptor, header.steps * 3 + 4096);
-	const auto samples = parse_scan_response(response, header.steps);
-	const auto end_time = time_str();
-
-	output << std::format("$ {:.06f},{:.06f},{},{:.03f},{},{}\n",
-		header.start_freq, header.stop_freq, header.steps, header.rbw,
-		header.start_time, end_time);
-	for(const auto raw_sample : samples)
-		output << std::format("{:.1f}\n", raw_sample / 32.0 - zero_level);
-	output << '\n';
-	throw_if(!output, "Failed to write scan record");
-	std::cout << std::format("Done. {} points read.\t", samples.size()) << std::flush;
+	const auto response = read_until_prompt(descriptor, expected_points * 3 + 4096);
+	auto samples = parse_scan_response(response, expected_points);
+	const auto end_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
+	return SweepRecord{
+		.sequence = 0,
+		.start_time = start_time,
+		.end_time = end_time,
+		.samples = std::move(samples)
+	};
 }
 
 [[nodiscard]] auto awake_time(const int interval)
@@ -178,6 +183,29 @@ void read_scanraw(
 	return result;
 }
 
+void sleep_until_or_stop(const std::chrono::system_clock::time_point deadline)
+{
+	using namespace std::chrono_literals;
+	while(stop_requested == 0)
+	{
+		const auto current = now();
+		if(current >= deadline)
+			return;
+		std::this_thread::sleep_for(std::min(deadline - current,
+			std::chrono::duration_cast<std::chrono::system_clock::duration>(250ms)));
+	}
+}
+
+void install_signal_handlers()
+{
+	struct sigaction action{};
+	action.sa_handler = request_stop;
+	::sigemptyset(&action.sa_mask);
+	action.sa_flags = 0;
+	if(::sigaction(SIGINT, &action, nullptr) < 0 || ::sigaction(SIGTERM, &action, nullptr) < 0)
+		throw_system_error("install signal handler");
+}
+
 void help_message(const char *program)
 {
 	std::cout << "Usage: " << program << " [options]\n"
@@ -190,22 +218,8 @@ void help_message(const char *program)
 		"\t-p <filename prefix>\tdefault: \"sp\"\n"
 		"\t-l <loop?>\t\t0 is false, any other integer is true\n"
 		"\t-x <max records>\tdefault: 1440, 0 disables rotation\n"
+		"\t-F, --format <format>\ttext (default) or binary\n"
 		"\t-i <interval>\t\tsweep interval in seconds (default: 60)\n\n";
-}
-
-[[nodiscard]] std::string new_logfile(
-	std::fstream &output,
-	const std::string_view filename_prefix,
-	const std::string_view start_time
-)
-{
-	const auto filename = std::format("{}.{}.log", filename_prefix, start_time);
-	if(output.is_open())
-		output.close();
-	output.clear();
-	output.open(filename, std::ios::out);
-	throw_if(!output.is_open(), std::format("Error: cannot open output file: {}", filename));
-	return filename;
 }
 
 void configure_serial_port(const int descriptor)
@@ -256,9 +270,16 @@ try
 	int interval = 60;
 	std::string model{"tinySA4"};
 	std::size_t max_records = 1440;
+	LogFormat output_format = LogFormat::text;
 
+	const option long_options[]{
+		{"format", required_argument, nullptr, 'F'},
+		{"help", no_argument, nullptr, 'h'},
+		{nullptr, 0, nullptr, 0}
+	};
 	int option;
-	while((option = ::getopt(argc, argv, "t:s:e:k:r:p:l:i:m:x:h")) != -1)
+	while((option = ::getopt_long(argc, argv, "t:s:e:k:r:p:l:i:m:x:F:h",
+		long_options, nullptr)) != -1)
 	{
 		switch(option)
 		{
@@ -272,6 +293,7 @@ try
 			case 'i': interval = parse_option<int>(optarg, "interval"); break;
 			case 'm': model = optarg; break;
 			case 'x': max_records = parse_option<std::size_t>(optarg, "max records"); break;
+			case 'F': output_format = parse_log_format(optarg, false); break;
 			case 'h': help_message(argv[0]); return EXIT_SUCCESS;
 			default: help_message(argv[0]); return EXIT_FAILURE;
 		}
@@ -283,12 +305,12 @@ try
 	throw_if(header.rbw <= 0 || header.rbw > 1000, "Error: RBW must be in the range (0, 1000]");
 	throw_if(interval <= 0, "Error: interval must be positive");
 	throw_if(tty_device.empty(), "Error: no tty device specified");
-	int zero_level;
+	int zero_level{};
 	if(model == "tinySA")
 		zero_level = ZERO_LEVEL;
 	else if(model == "tinySA4")
 		zero_level = ZERO_LEVEL_ULTRA;
-	else
+	else if(stop_requested == 0)
 		throw std::runtime_error(std::format("Error: unknown model {}", model));
 	if(60 % interval != 0)
 	{
@@ -302,12 +324,13 @@ try
 	FileDescriptor serial{descriptor};
 	throw_if(::isatty(serial.get()) == 0, std::format("Error: {} is not a tty", tty_device));
 	configure_serial_port(serial.get());
+	install_signal_handlers();
 
 	std::cerr << std::format(
 		"tty = {}, start = {:.6f}MHz, stop = {:.6f}MHz, step = {:.3f}kHz, "
-		"rbw = {:.3f}kHz, filename prefix = \"{}\"\n",
+		"rbw = {:.3f}kHz, filename prefix = \"{}\", format = {}\n",
 		tty_device, header.start_freq, header.stop_freq, step_frequency_khz,
-		header.rbw, filename_prefix);
+		header.rbw, filename_prefix, log_format_name(output_format));
 
 	print("Initializing...\n\n");
 	send_command(serial.get(), "");
@@ -321,7 +344,7 @@ try
 	const double floating_steps =
 		(header.stop_freq - header.start_freq) / (step_frequency_khz / 1e3) + 1;
 	throw_if(!std::isfinite(floating_steps) || floating_steps < 2
-		|| floating_steps >= static_cast<double>(std::numeric_limits<std::size_t>::max()),
+		|| floating_steps > static_cast<double>(std::numeric_limits<std::uint32_t>::max()),
 		"Calculated step count is outside the supported range");
 	const double rounded_steps = std::ceil(floating_steps);
 	if(rounded_steps != floating_steps)
@@ -330,36 +353,61 @@ try
 	const auto scanraw_command = std::format(
 		"scanraw {:.0f} {:.0f} {}", header.start_freq * 1e6, header.stop_freq * 1e6, header.steps);
 
-	std::fstream output;
-	std::string start_time = time_str();
-	header.start_time = start_time;
-	std::string filename = new_logfile(output, filename_prefix, start_time);
+	const auto start_frequency_hz = static_cast<std::uint64_t>(
+		std::llround(header.start_freq * 1e6));
+	const auto stop_frequency_hz = static_cast<std::uint64_t>(
+		std::llround(header.stop_freq * 1e6));
+	const auto rbw_hz = static_cast<std::uint32_t>(std::llround(header.rbw * 1e3));
+	LogFileMetadata metadata{
+		.start_frequency_hz = start_frequency_hz,
+		.stop_frequency_hz = stop_frequency_hz,
+		.resolution_bandwidth_hz = rbw_hz,
+		.points_per_sweep = static_cast<std::uint32_t>(header.steps),
+		.calibration_scale_numerator = 1,
+		.calibration_offset_numerator = -zero_level * 32,
+		.calibration_denominator = 32,
+		.creation_time = {},
+		.device_model = model,
+		.writer_application = "Spectrum Saver spsave",
+		.device_identifier = tty_device,
+		.user_comment = {}
+	};
+	throw_if(header.steps > std::numeric_limits<std::size_t>::max() / 2 / 16,
+		"Asynchronous queue size overflows size_t");
+	auto rotating_writer = std::make_unique<RotatingLogWriter>(
+		filename_prefix, output_format, std::move(metadata), max_records);
+	AsyncLogWriter output{std::move(rotating_writer), 16, header.steps * 2 * 16};
 
-	print("\nOpened log file: {}\n", filename);
 	if(loop)
 	{
-		std::size_t record_count = 0;
-		while(true)
+		std::uint64_t record_count = 0;
+		while(stop_requested == 0)
 		{
 			std::cout << std::format("\r[{:8d}] ", record_count + 1) << std::flush;
-			std::this_thread::sleep_until(awake_time(interval));
-			start_time = time_str();
-			header.start_time = start_time;
+			sleep_until_or_stop(awake_time(interval));
+			if(stop_requested != 0)
+				break;
+			output.check();
+			const auto start_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
+			std::cout << std::format("[{}] Reading... ", time_str()) << std::flush;
 			send_command(serial.get(), scanraw_command);
-			read_scanraw(serial.get(), zero_level, header, output);
+			auto record = read_scanraw(serial.get(), header.steps, start_time);
+			const auto points_read = record.samples.size();
+			output.enqueue(std::move(record));
+			std::cout << std::format("Done. {} points read.\t", points_read) << std::flush;
 			++record_count;
-
-			if(max_records != 0 && record_count >= max_records)
-			{
-				record_count = 0;
-				filename = new_logfile(output, filename_prefix, time_str());
-				print("\n\nNew log file: {}\n", filename);
-			}
 		}
 	}
-
-	send_command(serial.get(), scanraw_command);
-	read_scanraw(serial.get(), zero_level, header, output);
+	else
+	{
+		const auto start_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
+		std::cout << std::format("[{}] Reading... ", time_str()) << std::flush;
+		send_command(serial.get(), scanraw_command);
+		auto record = read_scanraw(serial.get(), header.steps, start_time);
+		const auto points_read = record.samples.size();
+		output.enqueue(std::move(record));
+		std::cout << std::format("Done. {} points read.\t", points_read) << std::flush;
+	}
 	send_command(serial.get(), "resume");
 	output.close();
 	std::cout << '\n';

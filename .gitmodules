@@ -1,3 +1,6 @@
 [submodule "tinycolormap"]
 	path = contrib/tinycolormap
 	url = https://github.com/yuki-koyama/tinycolormap.git
+[submodule "contrib/crc32c"]
+	path = contrib/crc32c
+	url = https://github.com/google/crc32c.git
