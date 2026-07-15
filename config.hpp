@@ -1,24 +1,22 @@
-/* config.h: miscellaneous configurations */
+#pragma once
 
-/* options used by spsave: */
+#include <cstddef>
+#include <string_view>
 
-// tinySA Zero Level, 128 for tinySA, 174 for tinySA Ultra
-constexpr static int ZERO_LEVEL =	128;
-constexpr static int ZERO_LEVEL_ULTRA =	174;
+// tinySA zero level: 128 for tinySA, 174 for tinySA Ultra.
+inline constexpr int ZERO_LEVEL = 128;
+inline constexpr int ZERO_LEVEL_ULTRA = 174;
 
-/* options used by log2png: */
+inline constexpr std::string_view FONT_FAMILY{"Iosevka Term"};
 
-// Font for info text
-// Too long, can't be constexpr
-const static string FONT_FAMILY{"Iosevka Term"};
+inline constexpr int BANNER_HEIGHT = 64;
+inline constexpr int FOOTER_HEIGHT = 24;
+inline constexpr std::string_view BANNER_COLOR{"white"};
+inline constexpr std::string_view FOOTER_COLOR{"yellow"};
 
-// Height of banner and footer in pixels
-constexpr static int BANNER_HEIGHT = 64;
-constexpr static int FOOTER_HEIGHT = 24;
-const static string BANNER_COLOR{"white"};
-const static string FOOTER_COLOR{"yellow"};
+[[nodiscard]] constexpr double pixels_to_points(const double pixels) noexcept
+{
+	return pixels * 72.0 / 96.0;
+}
 
-#define PX_TO_PT(x)	((double)(x) * 72 / 96)
-
-// Minimum number of gridlines to draw
-constexpr static int MIN_GRIDLINES = 6;
+inline constexpr std::size_t MIN_GRIDLINES = 6;

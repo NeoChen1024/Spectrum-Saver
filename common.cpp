@@ -1,278 +1,403 @@
-#include <iostream>
-#include <iomanip>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <cassert>
-#include <cstddef>
-#include <cstdlib>
-#include <cctype>
-#include <ctime>
-#include <chrono>
-#include <unistd.h>
-#include <limits.h>
-#include <omp.h>
-#include <date/date.h>
 #include "common.hpp"
-#include "config.hpp"
 
-const time_point<system_clock> now(void)
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <type_traits>
+
+namespace
 {
-	return system_clock::now();
+[[nodiscard]] std::string_view trim(std::string_view value)
+{
+	const auto first = value.find_first_not_of(" \t\r\n");
+	if(first == std::string_view::npos)
+		return {};
+	const auto last = value.find_last_not_of(" \t\r\n");
+	return value.substr(first, last - first + 1);
 }
 
-const string time_str(void)
+template<typename T>
+[[nodiscard]] bool parse_number(std::string_view text, T &value)
 {
-	return format("{:%Y%m%dT%H%M%S}", std::chrono::floor<std::chrono::seconds>(now()));
-}
-
-const time_point<system_clock> time_from_str(const string &str)
-{
-	using date::parse;
-
-	time_point<system_clock, seconds> time;
-	std::istringstream ss(str);
-	ss >> parse("%4Y%2m%2dT%2H%2M%2S", time);
-	if_error(ss.fail(), "Failed to parse time string");
-
-	return time;
-}
-
-// parse log record header line
-// # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-// formatted by:
-//	"# %.06f,%.06f,%ld,%.03f,%s,%s\n"
-bool parse_header(const string &line, logheader_t &h)
-{
-	char start_time_str[32];
-	char end_time_str[32];
-	if(line[0] != '$')
-		return false;
-	
-	int ret = sscanf(line.c_str(), "$ %lf,%lf,%zu,%f,%31[^,],%31[^,]", &h.start_freq, &h.stop_freq, &h.steps, &h.rbw, start_time_str, end_time_str);
-	h.start_time = start_time_str;
-	h.end_time = end_time_str;
-
-	if(ret != 6)
+	text = trim(text);
+	if(text.empty())
 		return false;
 
-	// sanity check
-	if(h.start_freq >= h.stop_freq)
+	bool explicitly_positive = false;
+	if(text.front() == '+')
 	{
-		cerr << "Error: start_freq >= stop_freq" << endl;
-		return false;
-	}
-	if(h.steps == 0)
-	{
-		cerr << "Error: steps == 0" << endl;
-		return false;
-	}
-	if(h.rbw <= 0 || h.rbw > 1000)
-	{
-		cerr << "Error: rbw <= 0 || rbw > 1000" << endl;
-		return false;
+		explicitly_positive = true;
+		text.remove_prefix(1);
+		if(text.empty())
+			return false;
 	}
 
+	T parsed{};
+	const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
+	if(error != std::errc{} || end != text.data() + text.size())
+		return false;
+	if constexpr(std::is_floating_point_v<T>)
+	{
+		if(!std::isfinite(parsed))
+			return false;
+	}
+	if constexpr(std::is_signed_v<T>)
+	{
+		if(explicitly_positive && parsed < 0)
+			return false;
+	}
+
+	value = parsed;
 	return true;
 }
 
-// parse log file
-void parse_logfile
-(
-	vector<float> &power_data,
-	vector<logheader_t> &headers,
-	istream &logfile_stream
+[[nodiscard]] bool split_header_fields(
+	std::string_view line,
+	std::array<std::string_view, 6> &fields
 )
 {
-	logheader_t h; // current header
-	logheader_t first_header
-	{
-		/* start freq */ 0,
-		/* stop freq */ 0,
-		/* steps */ 0,
-		/* rbw */ 0,
-		/* start_time */ "",
-		/* end_time */ ""
-	};
+	if(line.empty() || line.front() != '$')
+		return false;
+	line.remove_prefix(1);
 
-	// for appending to vector<> headers
-	if(!headers.empty())
+	for(std::size_t index = 0; index < fields.size(); ++index)
 	{
-		first_header = headers.front();
+		const auto comma = line.find(',');
+		if(index + 1 == fields.size())
+		{
+			if(comma != std::string_view::npos)
+				return false;
+			fields[index] = trim(line);
+			return !fields[index].empty();
+		}
+		if(comma == std::string_view::npos)
+			return false;
+		fields[index] = trim(line.substr(0, comma));
+		if(fields[index].empty())
+			return false;
+		line.remove_prefix(comma + 1);
 	}
-
-	string line;
-	size_t in_record_line_count = 0;
-	size_t real_line_count = 0;
-	size_t lines_per_record = SIZE_MAX;
-
-	if_error(!logfile_stream.good(), "Error: invalid logfile stream");
-	// types of lines:
-	// 	record header: # <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
-	// 	data: <dbm>\n<dbm>\n<dbm>\n...
-	// 	trailing newline of a record: \n
-	// any other line is invalid
-
-	if_error(logfile_stream.bad(), "Error: invalid logfile stream");
-
-	while(getline(logfile_stream, line))
-	{
-		real_line_count++;
-		if(line[0] == '#')
-			continue; // comment line
-
-		in_record_line_count++;
-
-		// parse header
-		if(in_record_line_count % lines_per_record == 1)
-		{
-			bool ret = parse_header(line, h);
-			if_error(!ret, format("Error: invalid header at line #{}", real_line_count));
-
-			if(first_header.steps == 0)
-			{
-				lines_per_record = h.steps + 2; // +1 for header, +1 for trailing newline
-				first_header = h;
-			}
-			else
-			{
-				if_error(h.start_freq != first_header.start_freq,
-					format("Error: start_freq mismatch at line #{}: {} != {}",
-						real_line_count, h.start_freq, first_header.start_freq));
-				if_error(h.stop_freq != first_header.stop_freq,
-					format("Error: stop_freq mismatch at line #{}: {} != {}",
-						real_line_count, h.stop_freq, first_header.stop_freq));
-				if_error(h.steps != first_header.steps,
-					format("Error: steps count mismatch at line #{}: {} != {}",
-						real_line_count, h.steps, first_header.steps));
-				if_error(h.rbw != first_header.rbw,
-					format("Error: rbw mismatch at line #{}: {} != {}",
-						real_line_count, h.rbw, first_header.rbw));
-			}
-
-			headers.emplace_back(h);
-		}
-		else if(in_record_line_count % lines_per_record == 0)
-		{
-			// trailing newline of a record
-			if_error(!line.empty(), format("Error: newline expected at line #{}", real_line_count));
-			in_record_line_count = 0;
-		}
-		else
-		{
-			float power = 0;
-			// data line
-			try
-			{
-				power = std::stof(line);
-			}
-			catch(const std::exception& e)
-			{
-				cerr << format("std::stod exception: {}\n", e.what());
-				if_error(true, format("Error: failed to parse double from line {}: \"{}\"", real_line_count, line));
-			}
-			if(!isfinite(power))
-				if_error(true, format("Error: invalid power value at line #{}", real_line_count));
-			power_data.emplace_back(power);
-		}
-	}
-
-	if_error(headers.size() == 0, "Error: no valid record found in log file");
-
-	// check if size of power_data is correct
-	if(power_data.size() != headers.size() * first_header.steps)
-		if_error(true, "Error: power_data count is not correct");
+	return false;
 }
 
-// check for time consistency of log file
-bool check_logfile_time_consistency(const vector<logheader_t> &headers, logproblem_t &problems)
+[[nodiscard]] std::int64_t checked_size_to_int64(const std::size_t value, std::string_view name)
 {
-	size_t inconsistency_count = 0;
-	const auto record_count = headers.size();
+	throw_if(value > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()),
+		std::format("{} is too large", name));
+	return static_cast<std::int64_t>(value);
+}
+}
+
+void throw_if(const bool condition, const std::string_view message)
+{
+	if(condition)
+		throw std::runtime_error(std::string{message});
+}
+
+std::chrono::system_clock::time_point now()
+{
+	return std::chrono::system_clock::now();
+}
+
+std::string time_str()
+{
+	return std::format("{:%Y%m%dT%H%M%S}", std::chrono::floor<std::chrono::seconds>(now()));
+}
+
+std::chrono::sys_seconds time_from_str(const std::string_view str)
+{
+	std::chrono::sys_seconds time;
+	std::istringstream stream{std::string{str}};
+	stream >> std::chrono::parse("%4Y%2m%2dT%2H%2M%2S", time);
+	throw_if(stream.fail() || stream.peek() != std::char_traits<char>::eof(),
+		std::format("Failed to parse time string: \"{}\"", str));
+	return time;
+}
+
+bool parse_header(const std::string_view line, LogHeader &header)
+{
+	std::array<std::string_view, 6> fields;
+	if(!split_header_fields(line, fields))
+		return false;
+
+	LogHeader parsed;
+	if(!parse_number(fields[0], parsed.start_freq)
+		|| !parse_number(fields[1], parsed.stop_freq)
+		|| !parse_number(fields[2], parsed.steps)
+		|| !parse_number(fields[3], parsed.rbw))
+		return false;
+	parsed.start_time = fields[4];
+	parsed.end_time = fields[5];
+
+	if(parsed.start_freq >= parsed.stop_freq || parsed.steps == 0
+		|| parsed.rbw <= 0 || parsed.rbw > 1000)
+		return false;
+
+	try
+	{
+		(void)time_from_str(parsed.start_time);
+		(void)time_from_str(parsed.end_time);
+	}
+	catch(const std::runtime_error &)
+	{
+		return false;
+	}
+
+	header = std::move(parsed);
+	return true;
+}
+
+void parse_logfile(
+	std::vector<float> &power_data,
+	std::vector<LogHeader> &headers,
+	std::istream &logfile_stream
+)
+{
+	enum class ParseState
+	{
+		header,
+		samples,
+		separator
+	};
+
+	throw_if(!logfile_stream.good(), "Error: invalid logfile stream");
+
+	std::optional<LogHeader> reference_header;
+	if(!headers.empty())
+		reference_header = headers.front();
+	ParseState state = ParseState::header;
+	std::size_t samples_in_record = 0;
+	std::size_t real_line_count = 0;
+	std::string line;
+
+	while(std::getline(logfile_stream, line))
+	{
+		++real_line_count;
+		if(!line.empty() && line.front() == '#')
+			continue;
+
+		switch(state)
+		{
+			case ParseState::header:
+			{
+				LogHeader header;
+				throw_if(!parse_header(line, header),
+					std::format("Error: invalid header at line #{}", real_line_count));
+
+				if(!reference_header)
+				{
+					reference_header = header;
+					headers.emplace_back(std::move(header));
+				}
+				else
+				{
+					throw_if(header.start_freq != reference_header->start_freq,
+						std::format("Error: start_freq mismatch at line #{}: {} != {}",
+							real_line_count, header.start_freq, reference_header->start_freq));
+					throw_if(header.stop_freq != reference_header->stop_freq,
+						std::format("Error: stop_freq mismatch at line #{}: {} != {}",
+							real_line_count, header.stop_freq, reference_header->stop_freq));
+					throw_if(header.steps != reference_header->steps,
+						std::format("Error: steps count mismatch at line #{}: {} != {}",
+							real_line_count, header.steps, reference_header->steps));
+					throw_if(header.rbw != reference_header->rbw,
+						std::format("Error: rbw mismatch at line #{}: {} != {}",
+							real_line_count, header.rbw, reference_header->rbw));
+					headers.emplace_back(std::move(header));
+				}
+
+				samples_in_record = 0;
+				state = ParseState::samples;
+				break;
+			}
+			case ParseState::samples:
+			{
+				float power{};
+				throw_if(!parse_number(line, power),
+					std::format("Error: invalid power value at line #{}: \"{}\"",
+						real_line_count, line));
+				power_data.emplace_back(power);
+				++samples_in_record;
+				if(samples_in_record == reference_header->steps)
+					state = ParseState::separator;
+				break;
+			}
+			case ParseState::separator:
+				throw_if(!line.empty(),
+					std::format("Error: blank separator expected at line #{}", real_line_count));
+				state = ParseState::header;
+				break;
+		}
+	}
+
+	throw_if(logfile_stream.bad(), "Error: failed while reading logfile stream");
+	throw_if(headers.empty(), "Error: no valid record found in log file");
+	throw_if(state == ParseState::samples,
+		std::format("Error: incomplete final record: expected {} samples, got {}",
+			reference_header->steps, samples_in_record));
+	throw_if(headers.size() > std::numeric_limits<std::size_t>::max() / reference_header->steps,
+		"Error: expected power_data count overflows size_t");
+	throw_if(power_data.size() != headers.size() * reference_header->steps,
+		"Error: power_data count is not correct");
+}
+
+bool check_logfile_time_consistency(
+	const std::span<const LogHeader> headers,
+	LogProblems &problems
+)
+{
+	problems = {};
+	std::size_t inconsistency_count = 0;
+	if(headers.empty())
+		return false;
+
+	for(std::size_t index = 0; index < headers.size(); ++index)
+	{
+		const auto start = time_from_str(headers[index].start_time);
+		const auto end = time_from_str(headers[index].end_time);
+		if(end < start)
+		{
+			std::cerr << std::format(
+				"Warning: end time is earlier than start time in record #{}\n", index + 1);
+			problems.time_overlap = true;
+			++inconsistency_count;
+		}
+	}
+
+	if(headers.size() == 1)
+		return inconsistency_count != 0;
+
 	const auto first_sweep_time = time_from_str(headers.front().start_time);
 	const auto last_sweep_time = time_from_str(headers.back().start_time);
-	const auto time_diff = duration_cast<seconds>(last_sweep_time - first_sweep_time);
-	const int interval = time_diff.count() / (record_count - 1);
+	const auto interval_count = checked_size_to_int64(headers.size() - 1, "record interval count");
+	const auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(
+		last_sweep_time - first_sweep_time).count();
+	const auto nominal_interval = time_diff / interval_count;
 
-	// check if time difference (in seconds) is divisible by record count
-	// record_count - 1 == number of intervals
-	if(time_diff.count() % (record_count - 1) != 0)
+	if(time_diff % interval_count != 0)
 	{
-		cerr << format("Warning: time range in seconds ({}) is not divisible by record count ({})\n",
-			time_diff.count(), record_count);
+		std::cerr << std::format(
+			"Warning: time range in seconds ({}) is not divisible by interval count ({})\n",
+			time_diff, interval_count);
 		problems.time_range_not_divisible_by_record_count = true;
-		inconsistency_count++;
+		++inconsistency_count;
 	}
 
-	// check if interval is a factor of 60
-	if(60 % interval != 0)
+	if(nominal_interval > 0 && 60 % nominal_interval != 0)
 	{
-		cerr << format("Warning: time interval {}sec is not a factor of 60\n", interval);
+		std::cerr << std::format(
+			"Warning: time interval {}sec is not a factor of 60\n", nominal_interval);
 		problems.interval_not_divisible_by_60 = true;
-		inconsistency_count++;
+		++inconsistency_count;
+	}
+	else if(nominal_interval <= 0)
+	{
+		problems.negative_interval = true;
+		++inconsistency_count;
 	}
 
-	// check timing
-	ssize_t last_interval = interval; // for checking if interval is constant
-	for(size_t i = 0; i < record_count - 1; i++)
+	std::int64_t last_interval = nominal_interval;
+	for(std::size_t index = 0; index + 1 < headers.size(); ++index)
 	{
-		const auto ts1 = time_from_str(headers.at(i).start_time);
-		const auto te1 = time_from_str(headers.at(i).end_time);
-		const auto ts2 = time_from_str(headers.at(i + 1).start_time);
-		const auto te2 = time_from_str(headers.at(i + 1).end_time);
-		const auto tsdiff = duration_cast<seconds>(ts2 - ts1);
+		const auto start = time_from_str(headers[index].start_time);
+		const auto end = time_from_str(headers[index].end_time);
+		const auto next_start = time_from_str(headers[index + 1].start_time);
+		const auto difference = std::chrono::duration_cast<std::chrono::seconds>(
+			next_start - start).count();
 
-		// check for time overlap
-		if(! (ts1 <= te1 && te1 <= ts2 && ts2 <= te2 && ts1 < ts2))
+		if(end > next_start || start >= next_start)
 		{
-			cerr << format("Warning: timestamp overlap between record #{} and #{}\n",
-				i + 1, i + 2);
+			std::cerr << std::format(
+				"Warning: timestamp overlap between record #{} and #{}\n", index + 1, index + 2);
 			problems.time_overlap = true;
-			inconsistency_count++;
+			++inconsistency_count;
 		}
-		// end time earlier than start time
-		if(te1 < ts1)
+		if(difference != last_interval)
 		{
-			cerr << format("Warning: end time is earlier than start time in record #{}\n",
-				i + 1);
-			problems.time_overlap = true;
-			inconsistency_count++;
-		}
-		// check the last record
-		if(i == record_count - 2 && te2 < ts2)
-		{
-			cerr << format("Warning: end time is earlier than start time in record #{}\n",
-				i + 2);
-			problems.time_overlap = true;
-			inconsistency_count++;
-		}
-	
-		// check if time difference is constant
-		const auto diff = tsdiff.count();
-		if(diff != last_interval)
-		{
-			cerr << format("Warning: interval between record #{} and #{} changed from {}s to {}s\n",
-				i + 1, i + 2, last_interval, diff);
+			std::cerr << std::format(
+				"Warning: interval between record #{} and #{} changed from {}s to {}s\n",
+				index + 1, index + 2, last_interval, difference);
 			problems.variant_interval = true;
-			inconsistency_count++;
+			++inconsistency_count;
 		}
-		if(diff < 0)
+		if(difference <= 0)
 		{
-			cerr << format("Warning: negative interval between record #{} and #{}\n",
-				i + 1, i + 2);
+			std::cerr << std::format(
+				"Warning: non-positive interval between record #{} and #{}\n",
+				index + 1, index + 2);
 			problems.negative_interval = true;
-			inconsistency_count++;
+			++inconsistency_count;
 		}
-
-		last_interval = diff;
+		last_interval = difference;
 	}
 
-	if(inconsistency_count > 0)
+	if(inconsistency_count != 0)
 	{
-		cerr << format("{} inconsistency(s) found, may not be able perform operations involving time correctly.\n",
+		std::cerr << std::format(
+			"{} inconsistency(s) found, may not be able to perform time-based operations correctly.\n",
 			inconsistency_count);
 	}
+	return inconsistency_count != 0;
+}
 
+std::vector<std::int64_t> calculate_gridline_columns(
+	const std::int64_t start_frequency_hz,
+	const std::int64_t stop_frequency_hz,
+	const std::size_t steps,
+	const std::size_t minimum_gridlines
+)
+{
+	throw_if(start_frequency_hz < 0 || stop_frequency_hz <= start_frequency_hz,
+		"Invalid frequency range for gridlines");
+	throw_if(steps < 2, "At least two frequency steps are required for gridlines");
+	throw_if(minimum_gridlines == 0, "Minimum gridline count must be positive");
 
-	return inconsistency_count > 0;
+	const auto step_count = checked_size_to_int64(steps - 1, "frequency step count");
+	const auto frequency_range = stop_frequency_hz - start_frequency_hz;
+	std::int64_t exponent = 100'000'000'000;
+	std::int64_t spacing = 1;
+	bool found_spacing = false;
+
+	while(exponent > 0 && !found_spacing)
+	{
+		for(const std::int64_t multiplier : {5, 2, 1})
+		{
+			if(exponent > std::numeric_limits<std::int64_t>::max() / multiplier)
+				continue;
+			const auto candidate = exponent * multiplier;
+			if(candidate > 0
+				&& frequency_range / candidate >= checked_size_to_int64(minimum_gridlines, "minimum gridline count"))
+			{
+				spacing = candidate;
+				found_spacing = true;
+				break;
+			}
+		}
+		exponent /= 10;
+	}
+
+	const auto quotient = start_frequency_hz / spacing;
+	throw_if(quotient == std::numeric_limits<std::int64_t>::max(),
+		"Gridline frequency overflow");
+	std::int64_t frequency = quotient * spacing;
+	if(frequency < start_frequency_hz)
+		frequency += spacing;
+
+	std::vector<std::int64_t> columns;
+	for(; frequency <= stop_frequency_hz; )
+	{
+		const auto offset = frequency - start_frequency_hz;
+		throw_if(offset != 0 && step_count > std::numeric_limits<std::int64_t>::max() / offset,
+			"Gridline coordinate overflow");
+		columns.emplace_back((offset * step_count + frequency_range / 2) / frequency_range);
+		if(frequency > stop_frequency_hz - spacing)
+			break;
+		frequency += spacing;
+	}
+	return columns;
 }

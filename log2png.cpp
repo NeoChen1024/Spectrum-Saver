@@ -6,276 +6,308 @@
  *   it under the terms of the GNU General Public License as published by
  *   the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "common.hpp"
 #include "config.hpp"
+
 #include <Magick++.h>
 #include <tinycolormap.hpp>
 
-using namespace Magick;
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <limits>
+#include <span>
+#include <string>
+#include <unistd.h>
+#include <vector>
+
+namespace
+{
 using MagickCore::Quantum;
 
-void draw_spectrogram(
-	const size_t sp_width,
-	const size_t sp_height,
-	const size_t sp_xoffset,
-	const size_t sp_yoffset,
-	vector<float> &power_data,
-	Image &image
+[[nodiscard]] std::size_t checked_pixel_count(
+	const std::size_t width,
+	const std::size_t height
 )
 {
-	Quantum *pixels = image.getPixels(sp_xoffset, sp_yoffset, sp_width, sp_height);
-	const int channels = image.channels();
-
-	// Measure speed
-	auto drawing_start_time = now();
-
-	// trivial to parallelize, so why not?
-	#pragma omp parallel for
-	for(size_t i = 0; i < power_data.size(); i++)
-	{
-		const double value = (power_data.at(i) + 120) / 100;
-		const auto mappedcolor = tinycolormap::GetColor(value, tinycolormap::ColormapType::Cubehelix);
-
-		// Raw pixel access is faster than directly using pixelColor()
-		pixels[i * channels + 0] = QuantumRange * mappedcolor.r();
-		pixels[i * channels + 1] = QuantumRange * mappedcolor.g();
-		pixels[i * channels + 2] = QuantumRange * mappedcolor.b();
-	}
-	image.syncPixels();
-
-	const auto drawing_end_time = now();
-	const auto drawing_duration = duration_cast<std::chrono::nanoseconds>(drawing_end_time - drawing_start_time);
-	assert(drawing_duration.count() > 0);
-	const size_t spectrogram_pixel_count = power_data.size();
-
-	print("Drawn spectrogram: {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
-		(double)spectrogram_pixel_count / 1e6, // Mpix
-		(double)drawing_duration.count() / 1e9, // seconds
-		(double)spectrogram_pixel_count * 1e3 / (drawing_duration.count()) // Mpix/s
-	);
-
+	throw_if(width != 0 && height > std::numeric_limits<std::size_t>::max() / width,
+		"Pixel view dimensions overflow");
+	return width * height;
 }
 
-void draw_text
-(
-	const string &text,
-	const int px,
-	const Magick::Color &color,
-	const Magick::Geometry &geom,
-	const Magick::GravityType &gravity,
-	Image &image
+class RgbPixelView
+{
+public:
+	RgbPixelView(
+		Magick::Image &image,
+		const std::size_t x,
+		const std::size_t y,
+		const std::size_t width,
+		const std::size_t height
+	) : pixels_{image}, channels_{image.channels()}, pixel_count_{checked_pixel_count(width, height)}
+	{
+		throw_if(x > static_cast<std::size_t>(std::numeric_limits<::ssize_t>::max())
+			|| y > static_cast<std::size_t>(std::numeric_limits<::ssize_t>::max()),
+			"Pixel view offset is outside ImageMagick's coordinate range");
+		auto *data = pixels_.get(
+			static_cast<::ssize_t>(x), static_cast<::ssize_t>(y), width, height);
+		throw_if(data == nullptr, "ImageMagick could not provide a writable pixel view");
+		throw_if(channels_ == 0 || pixel_count_ > std::numeric_limits<std::size_t>::max() / channels_,
+			"Pixel view buffer size overflow");
+		data_ = std::span<Magick::Quantum>{data, pixel_count_ * channels_};
+
+		red_offset_ = channel_offset(Magick::RedPixelChannel);
+		green_offset_ = channel_offset(Magick::GreenPixelChannel);
+		blue_offset_ = channel_offset(Magick::BluePixelChannel);
+	}
+
+	RgbPixelView(const RgbPixelView &) = delete;
+	RgbPixelView &operator=(const RgbPixelView &) = delete;
+
+	void set_rgb(
+		const std::size_t index,
+		const double red,
+		const double green,
+		const double blue
+	) const noexcept
+	{
+		auto *pixel = data_.data() + index * channels_;
+		pixel[red_offset_] = QuantumRange * red;
+		pixel[green_offset_] = QuantumRange * green;
+		pixel[blue_offset_] = QuantumRange * blue;
+	}
+
+	void sync()
+	{
+		pixels_.sync();
+	}
+
+private:
+	[[nodiscard]] std::size_t channel_offset(const Magick::PixelChannel channel) const
+	{
+		const auto offset = pixels_.offset(channel);
+		throw_if(offset < 0 || static_cast<std::size_t>(offset) >= channels_,
+			"ImageMagick image does not expose the required RGB channels");
+		return static_cast<std::size_t>(offset);
+	}
+
+	Magick::Pixels pixels_;
+	std::span<Magick::Quantum> data_;
+	std::size_t channels_;
+	std::size_t pixel_count_;
+	std::size_t red_offset_{};
+	std::size_t green_offset_{};
+	std::size_t blue_offset_{};
+};
+
+void draw_spectrogram(
+	const std::size_t width,
+	const std::size_t height,
+	const std::size_t x_offset,
+	const std::size_t y_offset,
+	const std::span<const float> power_data,
+	Magick::Image &image
 )
 {
-	image.fontPointsize(PX_TO_PT(px));
+	throw_if(width != 0 && height > std::numeric_limits<std::size_t>::max() / width,
+		"Spectrogram dimensions overflow");
+	throw_if(power_data.size() != width * height,
+		"Power sample count does not match the spectrogram dimensions");
+
+	RgbPixelView pixels{image, x_offset, y_offset, width, height};
+	const auto drawing_start_time = now();
+
+	#pragma omp parallel for
+	for(std::size_t index = 0; index < power_data.size(); ++index)
+	{
+		const double value = (power_data[index] + 120.0) / 100.0;
+		const auto color = tinycolormap::GetColor(value, tinycolormap::ColormapType::Cubehelix);
+		pixels.set_rgb(index, color.r(), color.g(), color.b());
+	}
+	pixels.sync();
+
+	const auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(now() - drawing_start_time);
+	throw_if(duration.count() <= 0, "Invalid spectrogram drawing duration");
+	print("Drawn spectrogram: {:.6f}Mpix took {:.3f} seconds, at {:.3f}Mpix/s\n",
+		static_cast<double>(power_data.size()) / 1e6,
+		static_cast<double>(duration.count()) / 1e9,
+		static_cast<double>(power_data.size()) * 1e3 / static_cast<double>(duration.count()));
+}
+
+void draw_text(
+	const std::string_view text,
+	const int pixel_size,
+	const Magick::Color &color,
+	const Magick::Geometry &geometry,
+	const Magick::GravityType gravity,
+	Magick::Image &image
+)
+{
+	image.fontPointsize(pixels_to_points(pixel_size));
 	image.fillColor(color);
-	image.annotate(text, geom, gravity);
+	image.annotate(std::string{text}, geometry, gravity);
 	image.modifyImage();
 }
 
-void draw_vertical_gridlines(const size_t steps, const size_t records, const logheader_t &h, Image &image)
+[[nodiscard]] std::int64_t frequency_to_hz(const double frequency_mhz)
 {
-	const size_t xoffset = 0;
-	const size_t yoffset = BANNER_HEIGHT;
+	throw_if(!std::isfinite(frequency_mhz) || frequency_mhz < 0
+		|| frequency_mhz > static_cast<double>(std::numeric_limits<std::int64_t>::max()) / 1e6,
+		"Frequency is outside the supported range");
+	return static_cast<std::int64_t>(std::llround(frequency_mhz * 1e6));
+}
 
-	// draw vertical gridlines
-	// calculate gridline spacing from frequency range
+void draw_vertical_gridlines(
+	const std::size_t steps,
+	const std::size_t records,
+	const LogHeader &header,
+	Magick::Image &image
+)
+{
+	throw_if(records == 0 || records > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()),
+		"Invalid record count for gridlines");
+	const auto start_frequency = frequency_to_hz(header.start_freq);
+	const auto stop_frequency = frequency_to_hz(header.stop_freq);
+	const auto columns = calculate_gridline_columns(
+		start_frequency, stop_frequency, steps, MIN_GRIDLINES);
 
-	const size_t start_freq = h.start_freq * 1e6;
-	const size_t stop_freq = h.stop_freq * 1e6;
-	const size_t step_freq = (stop_freq - start_freq) / (steps - 1);
-	const size_t freq_range = stop_freq - start_freq; // convert to Hz for easier calculation
-	size_t gridline_exponent = 100ULL * 1000 * 1000 * 1000; // 100 GHz
-	size_t gridline_spacing = SIZE_MAX;
-
-	Color gridline_color("grey");
+	Magick::Color gridline_color{"grey"};
 	gridline_color.quantumAlpha(QuantumRange * 0.75);
 	image.strokeColor(gridline_color);
 	image.strokeWidth(1);
 	image.strokeAntiAlias(false);
 
-	// find a gridline spacing that will result in at least MIN_GRIDLINES gridlines
-	while(freq_range / gridline_spacing < MIN_GRIDLINES)
-	{
-		gridline_spacing = gridline_exponent * 5;
-		if(freq_range / gridline_spacing >= MIN_GRIDLINES)
-			break;
-		gridline_spacing = gridline_exponent * 2;
-		if(freq_range / gridline_spacing >= MIN_GRIDLINES)
-			break;
-		gridline_spacing = gridline_exponent;
-		gridline_exponent /= 10;
-	}
-
-	print("Drawing frequency grid, freq_range: {} Hz, gridline_spacing: {} Hz\n", freq_range, gridline_spacing);
-
-	const size_t gridline_count = freq_range / gridline_spacing + 1;
-	// find point of the last gridline
-	const size_t last_gridline_point =  ((stop_freq / gridline_spacing * gridline_spacing) - start_freq) / step_freq;
-
 	std::vector<Magick::Drawable> draw_list;
-	for(size_t i = 0; i < gridline_count; i++)
-	{
-		const size_t x = xoffset + last_gridline_point - i * (gridline_spacing / step_freq);
-		const size_t h = records;
-		draw_list.emplace_back(Magick::DrawableLine(x, yoffset, x, yoffset + h - 1));
-	}
+	draw_list.reserve(columns.size());
+	const std::int64_t top = BANNER_HEIGHT;
+	const std::int64_t bottom = top + static_cast<std::int64_t>(records) - 1;
+	for(const auto column : columns)
+		draw_list.emplace_back(Magick::DrawableLine(column, top, column, bottom));
+
+	print("Drawing {} frequency gridlines over {} Hz\n",
+		columns.size(), stop_frequency - start_frequency);
 	image.draw(draw_list);
 	image.modifyImage();
 }
 
-static fstream logfile_stream;
-
-static string logfile_name = "";
-static string filename_prefix = "sp";
-static string graph_title = "Unnamed Spectrogram";
-static bool do_gridlines = true;
-
-bool parse_args(int argc, char *argv[])
+struct Options
 {
-	int opt;
+	std::string logfile_name;
+	std::string filename_prefix{"sp"};
+	std::string graph_title{"Unnamed Spectrogram"};
+	bool draw_gridlines{true};
+};
 
-	while((opt = getopt(argc, argv, "f:p:t:g:h")) != -1)
+[[nodiscard]] Options parse_arguments(const int argc, char *argv[])
+{
+	Options options;
+	int argument;
+	while((argument = ::getopt(argc, argv, "f:p:t:g:h")) != -1)
 	{
-		switch(opt)
+		switch(argument)
 		{
-			case 'f':
-				logfile_name = optarg;
-				break;
-			case 'p':
-				filename_prefix = optarg;
-				break;
-			case 't':
-				graph_title = optarg;
-				break;
+			case 'f': options.logfile_name = optarg; break;
+			case 'p': options.filename_prefix = optarg; break;
+			case 't': options.graph_title = optarg; break;
 			case 'g':
-				if(string(optarg) == "true")
-					do_gridlines = true;
-				else if(string(optarg) == "false")
-					do_gridlines = false;
+				if(std::string_view{optarg} == "true")
+					options.draw_gridlines = true;
+				else if(std::string_view{optarg} == "false")
+					options.draw_gridlines = false;
 				else
-				{
-					cerr << "Error: invalid value for -g: " << optarg << endl;
-					return false;
-				}
+					throw std::runtime_error(std::format("Invalid value for -g: {}", optarg));
 				break;
 			case 'h':
+				std::cout << "Usage: " << argv[0]
+					<< " -f <log file> [-p <filename prefix>] [-t <graph title>] "
+						"[-g <grid? true/false>]\n";
+				std::exit(EXIT_SUCCESS);
 			default:
-				cerr << "Usage: " << argv[0] <<
-					" [-f <log file>] [-p <filename prefix>] [-t <graph title>] [-g <grid? true/false>]" << endl;
-				return false;
+				throw std::runtime_error("Invalid command-line arguments");
 		}
 	}
-
-	if_error(logfile_name.empty(), "Error: no log file specified (-f).");
-
-	return true;
+	throw_if(options.logfile_name.empty(), "Error: no log file specified (-f)");
+	return options;
+}
 }
 
 int main(int argc, char *argv[])
-{
 try
 {
-	
 	Magick::InitializeMagick(*argv);
+	const auto options = parse_arguments(argc, argv);
 
-	if(parse_args(argc, argv) == false)
-		return EXIT_FAILURE;
-
-/* ==================== *\
-|| Text Processing Part ||
-\* ==================== */
-
-	vector<logheader_t> headers;
-	vector<float> power_data;
-
-	// open log file
-	// go through all headers to get record count & validate everything
-	if(logfile_name == "-")
+	std::vector<LogHeader> headers;
+	std::vector<float> power_data;
+	std::string display_logfile_name = options.logfile_name;
+	std::fstream logfile_stream;
+	if(options.logfile_name == "-")
 	{
-		parse_logfile(power_data, headers, cin);
-		logfile_name = "stdin";
+		parse_logfile(power_data, headers, std::cin);
+		display_logfile_name = "stdin";
 	}
 	else
 	{
-		logfile_stream.open(logfile_name, ios::in);
-		if_error(!logfile_stream.is_open(), "Error: could not open file " + logfile_name);
-
+		logfile_stream.open(options.logfile_name, std::ios::in);
+		throw_if(!logfile_stream.is_open(),
+			std::format("Error: could not open file {}", options.logfile_name));
 		parse_logfile(power_data, headers, logfile_stream);
 	}
 
-	logproblem_t problems = {};
-	check_logfile_time_consistency(headers, problems);
-
+	LogProblems problems;
+	(void)check_logfile_time_consistency(headers, problems);
 	const auto record_count = headers.size();
-	// get last header for easy access
-	const auto &h = headers.back();
+	const auto &header = headers.back();
+	print("{} has {} records, {} points each\n",
+		display_logfile_name, record_count, header.steps);
 
-	print("{} has {} records, {} points each\n", logfile_name, record_count, h.steps);
+	const auto output_name = std::format(
+		"{}.{}.png", options.filename_prefix, header.end_time);
+	const std::size_t spectrogram_width = header.steps;
+	const std::size_t spectrogram_height = record_count;
+	throw_if(record_count > std::numeric_limits<std::size_t>::max()
+		- static_cast<std::size_t>(BANNER_HEIGHT + FOOTER_HEIGHT),
+		"Image height overflow");
+	const std::size_t image_height =
+		record_count + static_cast<std::size_t>(BANNER_HEIGHT + FOOTER_HEIGHT);
 
-/* ===================== *\
-|| Image Processing Part ||
-\* ===================== */
-
-	// ex. sp.20230320T220505.png
-	string output_name = filename_prefix + "." + h.end_time + ".png";
-
-	// create the image
-
-	const size_t sp_width = h.steps;
-	const size_t sp_height = record_count;
-	const size_t sp_xoffset = 0;	// Currently unused
-	const size_t sp_yoffset = BANNER_HEIGHT;
-
-	const size_t width = h.steps;
-	const size_t height = record_count + BANNER_HEIGHT + FOOTER_HEIGHT;
-
-	Image image(Geometry(width, height), Color("black"));
+	Magick::Image image{
+		Magick::Geometry{spectrogram_width, image_height}, Magick::Color{"black"}};
 	image.verbose(true);
-	image.type(TrueColorType);
-	image.depth(8); // 8 bits per channel is enough for most usage
+	image.type(Magick::TrueColorType);
+	image.depth(8);
 	image.textAntiAlias(true);
-	image.fontFamily(FONT_FAMILY);
-	image.comment(graph_title);
+	image.fontFamily(std::string{FONT_FAMILY});
+	image.comment(options.graph_title);
 	image.modifyImage();
 
-	// Write banner text
-	draw_text(graph_title, BANNER_HEIGHT, BANNER_COLOR, Geometry(0, 0, 0, 0), Magick::NorthWestGravity, image);
+	draw_text(options.graph_title, BANNER_HEIGHT, Magick::Color{std::string{BANNER_COLOR}},
+		Magick::Geometry{}, Magick::NorthWestGravity, image);
+	draw_spectrogram(spectrogram_width, spectrogram_height, 0, BANNER_HEIGHT,
+		power_data, image);
 
-	draw_spectrogram(sp_width, sp_height, sp_xoffset, sp_yoffset, power_data, image);
+	const auto current_time = time_str();
+	const auto footer = std::format(
+		"Start: {}, Stop: {}, From {:.6f}MHz to {:.6f}MHz, {} Records, {} Steps, "
+		"RBW: {:.1f}kHz, Generated on {}",
+		headers.front().start_time, header.end_time, header.start_freq, header.stop_freq,
+		record_count, header.steps, header.rbw, current_time);
+	draw_text(footer, FOOTER_HEIGHT, Magick::Color{std::string{FOOTER_COLOR}},
+		Magick::Geometry{}, Magick::SouthEastGravity, image);
 
-	const string current_time = time_str();
+	if(options.draw_gridlines)
+		draw_vertical_gridlines(header.steps, record_count, header, image);
 
-	// Footer text
-	const string footer_info = format("Start: {}, Stop: {}, From {:.6f}MHz to {:.6f}MHz, {} Records, {} Steps, RBW: {:.1f}kHz, Generated on {}",
-		headers.front().start_time, h.end_time, h.start_freq, h.stop_freq, record_count, h.steps, h.rbw, current_time);
-	draw_text(footer_info, FOOTER_HEIGHT, FOOTER_COLOR, Geometry(0, 0, 0, 0), Magick::SouthEastGravity, image);
-
-	// Draw gridlines
-	if(do_gridlines)
-	{
-		draw_vertical_gridlines(h.steps, record_count, h, image);
-	}
-
-	// write the image to a file
 	print("[{}] Writing image: ", current_time);
-	// Enabled verbose
 	image.write(output_name);
-}
-catch(const StringException &e)
-{
-	cerr << e.what() << endl;
-	return EXIT_FAILURE;
-}
-
 	return EXIT_SUCCESS;
+}
+catch(const std::exception &error)
+{
+	std::cerr << error.what() << '\n';
+	return EXIT_FAILURE;
 }

@@ -10,15 +10,20 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
  $ git clone --recursive https://github.com/NeoChen1024/Spectrum-Saver.git
 ```
 
-### Dependencies:
+### Dependencies
 
-* [{fmt}](https://github.com/fmtlib/fmt "GitHub repo") string formatting library
-* Modern version of GCC or Clang for C++20 support
+- A C++20 compiler and standard library with `std::format` and C++20 chrono
+  parsing support
+- [ImageMagick](https://imagemagick.org/) with Magick++ development files
+- OpenMP
+- [tinycolormap](https://github.com/yuki-koyama/tinycolormap), included as a
+  Git submodule
 
-### Building:
+### Building
 
 ```shell
 $ make
+$ make test
 ```
 
 ### Usage:
@@ -34,6 +39,7 @@ $ make
 	-p <filename prefix>
 	-l <loop?>		0 is false, any other value is true
 	-i <interval>		sweep interval in seconds
+	-x <max records>	default: 1440, 0 disables log rotation
 
 
  $ log2png -f <log file> [-p <filename prefix>] [-t <graph title>] [-g <grid?>]
@@ -60,7 +66,6 @@ $ <start_freq>,<stop_freq>,<steps>,<RBW>,<start_time>,<end_time>
 <dBm>
 ```
 
-### Credits:
+### Credits
 
 * [tinycolormap](https://github.com/yuki-koyama/tinycolormap "GitHub repo") for this awesome colormap library
-* [date](https://github.com/HowardHinnant/date) for better date/time parsing function (hopefully will be included in C++23)

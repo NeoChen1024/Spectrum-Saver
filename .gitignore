@@ -5,6 +5,8 @@ sp/
 spsave
 log2png
 *.o
+*.d
 *.a
 *.out
 *.log
+/tests/test_main
