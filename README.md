@@ -14,6 +14,7 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
 
 - A C++20 compiler and standard library with `std::format` and C++20 chrono
   parsing support
+- CMake 3.16 or newer and pkg-config
 - [ImageMagick](https://imagemagick.org/) with Magick++ development files
 - OpenMP
 - [Google CRC32C](https://github.com/google/crc32c), included as a Git submodule
@@ -23,9 +24,14 @@ A set of program for logging spectrum from tinySA / tinySA Ultra & render the lo
 ### Building
 
 ```shell
-$ make
-$ make test
+$ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build --parallel
+$ ctest --test-dir build --output-on-failure
 ```
+
+The programs are written to `build/`. To install them, run
+`cmake --install build --prefix /path/to/install`. Tests can be disabled with
+`-DBUILD_TESTING=OFF` during configuration.
 
 ### Usage:
 

@@ -7,6 +7,8 @@ splogconvert
 *.o
 *.d
 .build/
+/build/
+/cmake-build-*/
 *.a
 *.out
 *.log
