@@ -143,23 +143,78 @@ void send_command(const int descriptor, const std::string_view command)
 	return response;
 }
 
-[[nodiscard]] std::string read_response(const int descriptor)
+[[nodiscard]] bool contains_command_echo(
+	const std::span<const std::uint8_t> response,
+	const std::string_view command
+)
 {
-	const auto bytes = read_until_prompt(descriptor, 1024 * 1024);
-	const std::string response{bytes.begin(), bytes.end()};
-	std::cout << ">> " << response << '\n';
-	return response;
+	const std::string_view text{reinterpret_cast<const char *>(response.data()), response.size()};
+	std::size_t offset = 0;
+	while((offset = text.find(command, offset)) != std::string_view::npos)
+	{
+		const auto end = offset + command.size();
+		if((offset == 0 || text[offset - 1] == '\n' || text[offset - 1] == '\r')
+			&& end < text.size() && (text[end] == '\r' || text[end] == '\n'))
+			return true;
+		++offset;
+	}
+	return false;
 }
+
+[[nodiscard]] std::vector<std::uint8_t> command_response(
+	const int descriptor,
+	const std::string_view command,
+	const std::size_t maximum_size = 1024 * 1024
+)
+{
+	send_command(descriptor, command);
+	// Opening a tinySA serial port may itself produce a prompt. Skip that and
+	// any older responses until the echo for this command arrives.
+	for(int attempt = 0; attempt < 8; ++attempt)
+	{
+		auto response = read_until_prompt(descriptor, maximum_size);
+		if(contains_command_echo(response, command))
+			return response;
+	}
+	throw std::runtime_error(std::format("No matching response to serial command: {}", command));
+}
+
+void print_command_response(const int descriptor, const std::string_view command)
+{
+	const auto bytes = command_response(descriptor, command);
+	std::cout << ">> " << std::string{bytes.begin(), bytes.end()} << '\n';
+}
+
+class ResumeOnExit
+{
+public:
+	explicit ResumeOnExit(const int descriptor) noexcept : descriptor_{descriptor} {}
+	~ResumeOnExit()
+	{
+		if(active_)
+		{
+			try { send_command(descriptor_, "resume"); }
+			catch(...) {}
+		}
+	}
+
+	void dismiss() noexcept { active_ = false; }
+
+private:
+	int descriptor_;
+	bool active_ = true;
+};
 
 [[nodiscard]] SweepRecord read_scanraw(
 	const int descriptor,
+	const std::string_view command,
 	const std::size_t expected_points,
 	const std::chrono::sys_time<std::chrono::nanoseconds> start_time
 )
 {
 	throw_if(expected_points > (std::numeric_limits<std::size_t>::max() - 4096) / 3,
 		"Requested scan is too large");
-	const auto response = read_until_prompt(descriptor, expected_points * 3 + 4096);
+	const auto response = command_response(descriptor, command, expected_points * 3 + 4096);
 	auto samples = parse_scan_response(response, expected_points);
 	const auto end_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
 	return SweepRecord{
@@ -333,12 +388,9 @@ try
 		header.rbw, filename_prefix, log_format_name(output_format));
 
 	print("Initializing...\n\n");
-	send_command(serial.get(), "");
-	(void)read_response(serial.get());
-	send_command(serial.get(), "pause");
-	(void)read_response(serial.get());
-	send_command(serial.get(), std::format("rbw {:.1f}", header.rbw));
-	(void)read_response(serial.get());
+	ResumeOnExit resume_on_exit{serial.get()};
+	print_command_response(serial.get(), "pause");
+	print_command_response(serial.get(), std::format("rbw {:.1f}", header.rbw));
 
 	print("Sweeping...\n\n");
 	const double floating_steps =
@@ -390,8 +442,7 @@ try
 			output.check();
 			const auto start_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
 			std::cout << std::format("[{}] Reading... ", time_str()) << std::flush;
-			send_command(serial.get(), scanraw_command);
-			auto record = read_scanraw(serial.get(), header.steps, start_time);
+			auto record = read_scanraw(serial.get(), scanraw_command, header.steps, start_time);
 			const auto points_read = record.samples.size();
 			output.enqueue(std::move(record));
 			std::cout << std::format("Done. {} points read.\t", points_read) << std::flush;
@@ -402,13 +453,13 @@ try
 	{
 		const auto start_time = std::chrono::time_point_cast<std::chrono::nanoseconds>(now());
 		std::cout << std::format("[{}] Reading... ", time_str()) << std::flush;
-		send_command(serial.get(), scanraw_command);
-		auto record = read_scanraw(serial.get(), header.steps, start_time);
+		auto record = read_scanraw(serial.get(), scanraw_command, header.steps, start_time);
 		const auto points_read = record.samples.size();
 		output.enqueue(std::move(record));
 		std::cout << std::format("Done. {} points read.\t", points_read) << std::flush;
 	}
-	send_command(serial.get(), "resume");
+	(void)command_response(serial.get(), "resume");
+	resume_on_exit.dismiss();
 	output.close();
 	std::cout << '\n';
 	return EXIT_SUCCESS;
